@@ -8,6 +8,7 @@ Created on Sun Nov 15 11:23:10 2020
 NW1 
 """
 
+#%%
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -35,9 +36,6 @@ import time
 from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 
-from scipy import stats
-
-
 # %% Train data
 
 print('----------------------- Data --------------------------')
@@ -49,60 +47,33 @@ num_fasc = 2
 M0 = 500
 num_atoms = 782
 
-filename = 'data/ID_noisy_data_lownoise' 
-IDs = pickle.load(open(filename, 'rb'))
-
-filename = 'data/nus_data_lownoise' 
-nus = pickle.load(open(filename, 'rb'))
-
 if use_noise:
-    filename = 'data/dw_noisy_data_lownoise'
-    data = pickle.load(open(filename, 'rb'))
+    filename = 'synthetic_data/DW_noisy_store__1000000__lou_version1'
+    y_data = pickle.load(open(filename, 'rb'))
 else:
-    filename = 'data/dw_image_data_lownoise'
-    data = pickle.load(open(filename, 'rb'))
+    filename = 'synthetic_data/DW_image_store__1000000__lou_version1'
+    y_data = pickle.load(open(filename, 'rb'))
 
+y_data = y_data/M0
 
-M, num_sample = data.shape #M=552
+M, size_data = y_data.shape #M=552
+num_sample = size_data
 num_div = num_sample/4
 
 print('M', M) 
 print('num_sample', num_sample)
 
-params1 = {
-    #Training parameters
-    "num_samples": num_sample,
-     "batch_size": 250,  
-     "num_epochs": 70,
-     
-     #NW2
-     "num_h1": 300,
-     "num_h2": 600,
-     "num_h3": 1200,
-     "num_h4": 600,
-     "num_h5": 120,
-     
-     #other
-     "learning_rate": 0.0005,
-     #"learning_rate": hp.choice("learningrate", [0.0005, 0.00075, 0.001, 0.00125, 0.0015, 0.00175, 0.002]),
-     "dropout": 0.2
-     # "dropout": 0.2
-     #"dropout": hp.uniform("dropout", 0, 0.4)
-}
-
-
-#%% Back to data
+# %% Back to data
 
 # divide data in train, test and validation
-x_train = data[:, 0:int(2*num_div)]
-x_test = data[:, int(2*num_div) : int(3*num_div) ]
-x_valid = data[:, int(3*num_div) : int(4*num_div) ]
+x_train = y_data[:, 0:int(2*num_div)]
+x_test = y_data[:, int(2*num_div) : int(3*num_div) ]
+x_valid = y_data[:, int(3*num_div) : int(4*num_div) ]
 
 x_train = torch.from_numpy(x_train)
 x_test = torch.from_numpy(x_test)
 x_valid = torch.from_numpy(x_valid)
 
-#print(x_train)
 print('x_train size', x_train.shape)
 print('x_test size', x_test.shape)
 print('x_valid size', x_valid.shape)
@@ -116,44 +87,40 @@ x_valid = x_valid.float()
 x_valid = torch.transpose(x_valid, 0, 1) 
 
 
-
 # %% Target data
 
 print("--- Taking microstructural properties of fascicles ---")
 
 data_dir = 'synthetic_data'
-use_dictionary = True
 
-if use_dictionary :
-    if use_noise:
-        parameters = util.loadmat(os.path.join(data_dir,
-                                                    "training_data_triangSNR_"
-                                                    "1000000_samples_safe.mat"))
-    else:
-        parameters = util.loadmat(os.path.join(data_dir,
-                                                    "training_data_"
-                                                    "1000000_samples_safe.mat"))  
-else :
-    filename = 'NW1targets' 
-    parameters = pickle.load(open(filename, 'rb'))
-    
+target_data = util.loadmat(os.path.join('synthetic_data',
+                                            "training_data_"
+                                            "1000000_samples_lou_version1"))
+
+# Substrate (=fingerprint) properties
+IDs = target_data['IDs']
+nus = target_data['nus']
     
 target_params = np.zeros((6, num_sample))
 
 target_params[0,:] = nus[:,0]
-target_params[1,:] = parameters['subinfo']['rad'][IDs[:,0]]
-target_params[2,:] = parameters['subinfo']['fin'][IDs[:,0]]
+target_params[1,:] = target_data['subinfo']['rad'][IDs[:,0]]
+target_params[2,:] = target_data['subinfo']['fin'][IDs[:,0]]
 target_params[3,:] = nus[:,1]
-target_params[4,:] = parameters['subinfo']['rad'][IDs[:,1]]
-target_params[5,:] = parameters['subinfo']['fin'][IDs[:,1]]
+target_params[4,:] = target_data['subinfo']['rad'][IDs[:,1]]
+target_params[5,:] = target_data['subinfo']['fin'][IDs[:,1]]
 
 print('target_params', target_params.shape)
 
 ## Standardisation
 
+#print(target_params[:5, :5])
+
 scaler1 = StandardScaler()
 target_params = scaler1.fit_transform(target_params.T)
 target_params = target_params.T
+
+#print(target_params[:5, :5])
 
 ## Dividing in train test and valid
 target_train = target_params[:, 0:int(2*num_div)]
@@ -162,6 +129,7 @@ target_valid = target_params[:, int(3*num_div) : int(4*num_div) ]
 
 
 print('target_train size', target_train.shape)
+#print('target_test size', target_test.shape)
 print('target_valid size', target_valid.shape)
 
 #quelques modifs pour le modele neuronal
@@ -172,13 +140,37 @@ target_test = torch.transpose(target_test, 0, 1)
 target_valid = torch.from_numpy(target_valid).float()
 target_valid = torch.transpose(target_valid, 0, 1) 
 
+#%% Parameters
+
+params1 = {
+    #Training parameters
+    "num_samples": num_sample,
+     "batch_size": 5000,  
+     "num_epochs": 25,
+     
+     #NW2
+     "num_h1": 200,
+     "num_h2": 600,
+     "num_h3": 1200,
+     "num_h4": 600,
+     "num_h5": 500,
+     "num_h6": 400,
+     "num_h7": 100,
+     
+     #other
+     "learning_rate": 0.0005,
+     #"learning_rate": hp.choice("learningrate", [0.0005, 0.00075, 0.001, 0.00125, 0.0015, 0.00175, 0.002]),
+     "dropout": 0.05
+     #"dropout": hp.uniform("dropout", 0, 0.4)
+     #hp.choice(hsjdkfhs, )
+}
 
 
 # %% Building the network
 
 class Net1(nn.Module):
 
-    def __init__(self, num_in, num_h1, num_h2, num_h3, num_h4, num_h5, num_out, drop_prob):
+    def __init__(self, num_in, num_h1, num_h2, num_h3, num_h4, num_h5, num_h6, num_h7, num_out, drop_prob):
         super(Net1, self).__init__()  
         # input layer
         self.W_1 = Parameter(init.kaiming_uniform_(torch.Tensor(num_h1, num_in)))
@@ -198,8 +190,15 @@ class Net1(nn.Module):
         self.W_5 = Parameter(init.kaiming_uniform_(torch.Tensor(num_h5, num_h4)))
         self.b_5 = Parameter(init.constant_(torch.Tensor(num_h5), 0))
         
-        self.W_6 = Parameter(init.kaiming_uniform_(torch.Tensor(num_out, num_h5)))
-        self.b_6 = Parameter(init.constant_(torch.Tensor(num_out), 0))
+        self.W_6 = Parameter(init.kaiming_uniform_(torch.Tensor(num_h6, num_h5)))
+        self.b_6 = Parameter(init.constant_(torch.Tensor(num_h6), 0))
+        
+        self.W_7 = Parameter(init.kaiming_uniform_(torch.Tensor(num_h7, num_h6)))
+        self.b_7 = Parameter(init.constant_(torch.Tensor(num_h7), 0))
+        
+        self.W_8 = Parameter(init.kaiming_uniform_(torch.Tensor(num_out, num_h7)))
+        self.b_8 = Parameter(init.constant_(torch.Tensor(num_out), 0))
+        
         
         #self.W_3_bn = nn.BatchNorm2d(num_out)
         # define activation function in constructor
@@ -231,6 +230,14 @@ class Net1(nn.Module):
         x = self.dropout(x)
         
         x = F.linear(x, self.W_6, self.b_6)
+        x = self.activation(x)
+        x = self.dropout(x)
+        
+        x = F.linear(x, self.W_7, self.b_7)
+        x = self.activation(x)
+        x = self.dropout(x)
+        
+        x = F.linear(x, self.W_8, self.b_8)
 
         return x
 
@@ -245,15 +252,16 @@ def train_network1(params1: dict):
     num_h3 = params1["num_h3"] 
     num_h4 = params1["num_h4"]
     num_h5 = params1["num_h5"]
+    num_h6 = params1["num_h6"]
+    num_h7 = params1["num_h7"]
     drop_prob = params1["dropout"]
     
-    net1 = Net1(num_in, num_h1, num_h2, num_h3, num_h4, num_h5, num_out, drop_prob)
+    net1 = Net1(num_in, num_h1, num_h2, num_h3, num_h4, num_h5, num_h6, num_h7, num_out, drop_prob)
     
     print(net1)
     
     # Optimizer and Criterion
     optimizer = optim.Adam(net1.parameters(), lr=params1["learning_rate"], weight_decay=0.0000001)
-    #optimizer = optim.Adam(net1.parameters(), lr=params1["learning_rate"])
     lossf = nn.MSELoss()
 
     print('----------------------- Training --------------------------')
@@ -274,7 +282,6 @@ def train_network1(params1: dict):
     
     cur_loss = 0
     losses = []
-    times = []
     
     start_time = time.time()
     
@@ -284,7 +291,6 @@ def train_network1(params1: dict):
     for epoch in range(num_epochs):
         
         t = time.time() - start_time
-        times.append(t)
         
         # Forward -> Backprob -> Update params
         ## Train
@@ -341,10 +347,9 @@ def train_network1(params1: dict):
         meanTrainError.append(np.mean(train_acc[epoch,:]))
         meanValError.append(np.mean(valid_acc[epoch, :]))
         
-        
         print("Epoch %2i : Train Loss %f , Train acc %f, Valid acc %f, " %(
             epoch+1, losses[-1], meanTrainError[-1], meanValError[-1]))
-        print('time:', t)
+        print("time", t)
         
     to_min = sum(valid_acc_cur)
       
@@ -355,8 +360,7 @@ def train_network1(params1: dict):
             "train_acc": train_acc,
             "valid_acc": valid_acc,
             "meanTrainError": meanTrainError,
-            "meanValError": meanValError,
-            "times": times
+            "meanValError": meanValError
             }
 
 #%% Training
@@ -365,27 +369,16 @@ tic = time.time()
 trial = train_network1(params1)  
 toc = time.time()
 
-filename = 'model1_version1' 
-
+print("training time:", toc-tic, "[sec]")
+        
+filename = 'model1_withdico_louVersion1_big1' 
 with open(filename, 'wb') as f:
          pickle.dump(trial, f)
          f.close()
-
-print("training time:", toc-tic, "[sec]")
-
-#%% Graph time vs error
-
-plt.figure()
-plt.plot(trial['times'],trial['meanValError'])
-plt.title('Time vs error - Network 1 - SNR 80-100')
-plt.ylabel('mean absolute error')
-plt.xlabel('computation time [s]')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()        
-
+        
 #%% Graphs
+
+import matplotlib.pyplot as plt
 
 train_acc = trial['train_acc']
 valid_acc = trial['valid_acc']
@@ -404,42 +397,44 @@ meanTrainError = trial['meanTrainError']
 meanValError = trial['meanValError']
 
 # Mean Error
+print(trial['meanTrainError'])
 plt.figure()
 plt.plot(epoch, meanTrainError, 'r', epoch, meanValError, 'b')
-plt.title('Learning curve')
+plt.title('Learning Curve: Mean Error - DL after NNLS')
 plt.grid(b=True, which='major', color='#666666', linestyle='-')
 plt.minorticks_on()
 plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
 plt.legend(['Mean Train error','Mean Validation error'])
-plt.xlabel('Updates'), plt.ylabel('Error')
+plt.xlabel('Epochs'), plt.ylabel('Mean Scaled Error')
+plt.axis([0, 40, 0, 1])
 plt.show()
 
 
 #%% Predictions
-print('----------------------- Prediction --------------------------')
+# print('----------------------- Prediction --------------------------')
 
-net = trial['model']
+# net = trial['model']
 
-print(x_test.shape)
-output = net(x_test)
-output = output.detach().numpy()
+# print(x_test.shape)
+# output = net(x_test)
+# output = output.detach().numpy()
 
-mean_err_scaled = np.zeros(6)
-for i in range(6):
-    mean_err_scaled[i] = mean_absolute_error(output[:,i], target_test[:,i])
+# mean_err_scaled = np.zeros(6)
+# for i in range(6):
+#     mean_err_scaled[i] = mean_absolute_error(output[:,i], target_test[:,i])
 
-print("mean_abs_err", mean_err_scaled)
+# print("mean_abs_err", mean_err_scaled)
 
-properties = ['nu1', 'r1', 'f1', 'nu2', 'r2', 'f2']
-plt.figure()
-plt.bar(properties, mean_err_scaled)
+# properties = ['nu1', 'r1', 'f1', 'nu2', 'r2', 'f2']
+# plt.figure()
+# plt.bar(properties, mean_err_scaled)
 
-output = scaler1.inverse_transform(output)
-target_scaled = scaler1.inverse_transform(target_test)
+# output = scaler1.inverse_transform(output)
+# target_scaled = scaler1.inverse_transform(target_test)
 
-error = output - target_scaled
+# error = output - target_scaled
 
-abserror = abs(error)
+# abserror = abs(error)
 
 # plt.figure()
 # plt.plot(range(len(target_test)), error)
@@ -448,33 +443,33 @@ abserror = abs(error)
 # plt.show()
 
 
-plt.figure()
-plt.title('distribution of r1 errors for triangular noise')
-plt.hist(abserror[:,1], density=False, bins=30)  # `density=False` would make counts
-plt.ylabel('Count')
-plt.xlabel('error on radius 1')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
+# plt.figure()
+# plt.title('distribution of r1 errors for triangular noise')
+# plt.hist(abserror[:,1], density=False, bins=30)  # `density=False` would make counts
+# plt.ylabel('Count')
+# plt.xlabel('error on radius 1')
+# plt.grid(b=True, which='major', color='#666666', linestyle='-')
+# plt.minorticks_on()
+# plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
+# plt.show()
 
-print(np.mean(abserror[:,1]))
+# print(np.mean(abserror[:,1]))
 
 
 #%% 95% interval
 
-conf_int = np.zeros(num_params)
+# conf_int = np.zeros(num_params)
 
-for j in range(num_params):
-    data = error[:,j]
+# for j in range(num_params):
+#     data = error[:,j]
     
-    mean = np.mean(data)
-    sigma = np.std(data)
+#     mean = np.mean(data)
+#     sigma = np.std(data)
     
-    confint = stats.norm.interval(0.95, loc=mean, 
-        scale=sigma)
+#     confint = stats.norm.interval(0.95, loc=mean, 
+#         scale=sigma)
     
-    print(confint)
+#     print(confint)
 
 # %%Testing Optimisation
 
@@ -503,7 +498,3 @@ for j in range(num_params):
 # with open(filename, 'wb') as f:
 #         pickle.dump(trials, f)
 #         f.close()
-
-
-
-

@@ -40,26 +40,12 @@ use_prerot = False  # use pre-rotated dictionaries
 sparse = True # store data sparsely to save space
 save_res = False  # save mat file containing data
 SNR_dist = 'uniform'  # 'uniform' or 'triangular'
-num_samples = 300000 #originally at 100
+num_samples = 10 #originally at 100
 save_dir = 'synthetic_data'  # destination folder
 
 # Initiate random number generator (to make results reproducible)
 rand_seed = 141414
 np.random.seed(rand_seed)
-
-# %% Paths
-#hostname = socket.gethostname()
-#if hostname == 'rastaban.elen.ucl.ac.be':
-#    drive_folder = os.path.join('/home', 'rensonnetg', 'OneDrive')
-#    data_folder = os.path.join('/DATA1', 'data1', 'Documents', 'HCP_data',
-#                               'mgh_1003')
-#elif hostname == 'capella':
-#    drive_folder = os.path.join('E:\\', 'rensonnetg', 'OneDrive - UCL')
-#    data_folder = os.path.join('E:\\', 'rensonnetg', 'Documents', 'HCP_data',
-#                               'mgh_1003')
-# directory where prerotated dictionaries are (quite heavy files...)
-#path_rot_dicts = os.path.join('hcp_mgh_hexcyl',
-#                              'rotated_dictionaries')
 
 # %% Load DW-MRI protocol from Human Connectome Project (HCP)
 schemefile = os.path.join('real_data', 'hcp_mgh_1003.scheme1')
@@ -109,20 +95,12 @@ print('sig_csf', sig_csf.shape)
 S0_max = np.max(S0_fasc)
 assert num_atoms == len(subinfo['rad']), "Inconsistency dictionaries"
 
-# %% Pre-rotated dictionaries
-#if use_prerot:
-#    ld_prerot = util.loadmat(os.path.join(path_rot_dicts,
-#                                          'dict_info.mat'))
-#    num_dir = ld_prerot['num_dir']  # number of prerotated dictionaries
-#    directions = ld_prerot['directions']
-#    assert num_atoms == ld_prerot['num_atoms'], "Inconsistency number atoms"
-
 # %% Generate synthetic acquisition
 M0 = 500
 num_fasc = 2
 nu_min = 0.15
 nu_max = 1 - nu_min
-SNR_min = 4
+SNR_min = 80
 SNR_max = 100
 #SNR_max = 30
 num_coils = 1
@@ -151,10 +129,7 @@ SNRs = np.zeros(num_samples)
 DW_image_store = np.zeros((552, num_samples))
 DW_noisy_store = np.zeros((552, num_samples))
 
-if use_prerot:
-    orientations = np.zeros((num_samples, num_fasc))
-else:
-    orientations = np.zeros((num_samples, num_fasc, 3))
+orientations = np.zeros((num_samples, num_fasc, 3))
 if sparse:
     sparsity = 0.01  # expected proportion of nnz atom weights per fascicle
     nnz_pred = int(np.ceil(sparsity * num_atoms * num_samples * num_fasc))
@@ -189,57 +164,28 @@ for i in range(num_samples):
         raise ValueError("Unknown SNR distribution %s" % SNR_dist)
 
     sigma_g = S0_max/SNR
-    if use_prerot:
-        # Using pre-rotated dictionaries
-        ID_dir1 = np.random.randint(0, num_dir)
-        cyldir_1 = directions[ID_dir1, :]
-        while True:
-            ID_dir2 = np.random.randint(0, num_dir)
-            cyldir_2 = directions[ID_dir2, :]
-            cosangle = np.abs(np.dot(cyldir_1, cyldir_2))
-            if cosangle < cos_min:
-                break
 
-        ld_dict_1 = util.loadmat(os.path.join(path_rot_dicts,
-                                              "hcp_mgh_hexcyl"
-                                              "_dir%d.mat" % (ID_dir1+1,)))
-        ld_dict_2 = util.loadmat(os.path.join(path_rot_dicts,
-                                              "hcp_mgh_hexcyl"
-                                              "_dir%d.mat" % (ID_dir2+1,)))
-        dictionary[:, :num_atoms] = ld_dict_1['dictionary']
-        dictionary[:, num_atoms:] = ld_dict_2['dictionary']
-
-        # Using pre-rotated dictionaries to assemble synthetic DWI
-        DW_image = nu1 * ld_dict_1['dictionary'][:, ID_1]
-        DW_image += nu2 * ld_dict_2['dictionary'][:, ID_2]
-        #print('DW_image case 1', DW_image)
-    else:
-        # First fascicle direction fixed, second fascicle rotated on the fly
-        cyldir_1 = refdir
-        cyldir_2 = refdir.copy()
-        while np.dot(refdir, cyldir_2) > np.cos(crossangle_min):
-            cyldir_2 = np.random.randn(3)
-            norm_2 = np.sqrt(np.sum(cyldir_2**2))
-            if norm_2 < 1e-11:
-                cyldir_2 = refdir
-            else:
-                cyldir_2 = cyldir_2/norm_2
-        start_rot = time.time()
-        dic_sing_fasc_2 = util.rotate_atom(dic_sing_fasc,
-                                           sch_mat_b0, refdir, cyldir_2,
-                                           WM_DIFF, S0_fasc)
-        dictionary[:, num_atoms:] = dic_sing_fasc_2
-        time_rot_hist[i] = time.time() - start_rot
-
-        # Assemble synthetic DWI
-        DW_image = (nu1 * dic_sing_fasc[:, ID_1]
-                    + nu2 * dic_sing_fasc_2[:, ID_2])
-        
-        #print('DW_image case 2', DW_image.shape)
-        #plt.figure()
-        #plt.plot(DW_image)
-        #plt.show()
-
+    # First fascicle direction fixed, second fascicle rotated on the fly
+    cyldir_1 = refdir
+    cyldir_2 = refdir.copy()
+    while np.dot(refdir, cyldir_2) > np.cos(crossangle_min):
+        cyldir_2 = np.random.randn(3)
+        norm_2 = np.sqrt(np.sum(cyldir_2**2))
+        if norm_2 < 1e-11:
+            cyldir_2 = refdir
+        else:
+            cyldir_2 = cyldir_2/norm_2
+    start_rot = time.time()
+    dic_sing_fasc_2 = util.rotate_atom(dic_sing_fasc,
+                                       sch_mat_b0, refdir, cyldir_2,
+                                       WM_DIFF, S0_fasc)
+    dictionary[:, num_atoms:] = dic_sing_fasc_2
+    time_rot_hist[i] = time.time() - start_rot
+    
+    # Assemble synthetic DWI
+    DW_image = (nu1 * dic_sing_fasc[:, ID_1]
+                + nu2 * dic_sing_fasc_2[:, ID_2])
+    
     # Simulate noise and MRI scanner scaling
     DW_image_store[:, i] = DW_image
     
@@ -254,31 +200,75 @@ for i in range(num_samples):
     
     
 time_elapsed = time.time() - starttime
-print('%d samples created in %g sec.' % (num_samples, time_elapsed))
+#print('%d samples created in %g sec.' % (num_samples, time_elapsed))
 
 #%% Save in files
 
-# import pickle
+mdict = {'rand_seed': rand_seed,
+         'M0': M0,
+         'num_fasc': num_fasc,
+         'nu_min': nu_min,
+         'nu_max': nu_max,
+         'SNR_min': SNR_min,
+         'SNR_max': SNR_max,
+         'SNR_dist': SNR_dist,
+         'num_coils': num_coils,
+         'crossangle_min': crossangle_min,
+         'num_fasc': num_fasc,
+         'num_atoms': num_atoms,
+         'WM_DIFF': WM_DIFF,
+         'S0_fasc': S0_fasc,
+         'S0_max': S0_max,
+         'sig_csf': sig_csf,
+         'subinfo': subinfo,
+         'sch_mat_b0': sch_mat_b0,
+         'num_samples': num_samples,
+         'IDs': IDs,
+         'nus': nus,
+         'SNRs': SNRs,
+         'nnz_hist': nnz_hist,
+         'orientations': orientations,
+         'use_prerot': use_prerot,
+         }
 
-# filename = 'dw_image_data_big'
-# with open(filename, 'wb') as f:
-#         pickle.dump(DW_image_store, f)
-#         f.close()
+if save_res:
+    if SNR_dist == 'uniform':
+        SNR_str = 'uniform'
+    elif SNR_dist == 'triangular':
+        SNR_str = '_triangSNR'
+    else:
+        raise ValueError('Unknown SNR distribution %s' % SNR_dist)
+    fname = os.path.join(save_dir, "training_data%s_%d_samples_version2" %
+                         (SNR_str, num_samples))
+    scio.savemat(fname,
+                 mdict,
+                 format='5',
+                 long_field_names=False,
+                 oned_as='column')
+    
+#%% Pickle files
 
-# filename = 'dw_noisy_data_big' 
-# with open(filename, 'wb') as f:
-#         pickle.dump(DW_noisy_store, f)
-#         f.close()
+import pickle
+
+filename = 'dw_image_data_version2'
+with open(filename, 'wb') as f:
+        pickle.dump(DW_image_store, f)
+        f.close()
+
+filename = 'dw_noisy_data_version2' 
+with open(filename, 'wb') as f:
+        pickle.dump(DW_noisy_store, f)
+        f.close()
         
-# filename = 'ID_noisy_data_big' 
-# with open(filename, 'wb') as f:
-#         pickle.dump(IDs, f)
-#         f.close()
+filename = 'ID_noisy_data_version2' 
+with open(filename, 'wb') as f:
+        pickle.dump(IDs, f)
+        f.close()
         
-# filename = 'nus_data_big' 
-# with open(filename, 'wb') as f:
-#         pickle.dump(nus, f)
-#         f.close()
+filename = 'nus_data_version2' 
+with open(filename, 'wb') as f:
+        pickle.dump(nus, f)
+        f.close()
 
 
 

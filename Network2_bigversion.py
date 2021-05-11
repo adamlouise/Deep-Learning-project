@@ -39,42 +39,56 @@ from sklearn.metrics import mean_absolute_error
 num_atoms = 782
 num_fasc = 2
 num_params = 6 #nombre de paramètres à estimer: ['nu1', 'r1 ', 'f1 ', 'nu2', 'r2 ', 'f2 ']
-new_gen = False
-nouvel_enregist = False
-via_pickle = True
+new_gen = True
+nouvel_enregist = True
+via_pickle = False
 
 params = {
     #Training parameters
-    "num_samples": 1000000,
-     "batch_size": 10000,  
+    "num_samples": 50000,
+     "batch_size": 1000,  
      "num_epochs": 30,
      
      #NW1 parameters
      #"num_w_out": hp.choice("num_w_out", [3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30] ),
      "num_w_out": 50,
-     "num_w_l1": 600,
-     "num_w_l2": 200,
-     "num_w_l3": 50,
+     "num_w_l1": 200,
+     "num_w_l2": 600,
+     "num_w_l3": 200,
+     "num_w_l4": 50,
      
      #NW2
      "num_f_l1": 300,
-     "num_f_l2": 100,
+     "num_f_l2": 200,
+     "num_f_l3": 100,
      
      #other
      "learning_rate": 0.001, 
      #"learning_rate": hp.uniform("learningrate", 0.0005, 0.01),
-     "dropout": 0.2
+     "dropout": 0.1
      #"dropout": hp.uniform("dropout", 0, 0.4)
 }
 
 num_samples = params["num_samples"]
 num_div = int(num_samples/4)
 
+num_train_samples = int(num_div*2)
+num_test_samples = int(num_train_samples + num_div)
+num_valid_samples = int(num_test_samples + num_div)
+
+if (num_samples != num_valid_samples):
+    raise "Division of data in train, test, valid does not work"
+
+filename = 'model2_29_params2' 
+with open(filename, 'wb') as f:
+          pickle.dump(params, f)
+          f.close()
+
 # %% Data via pickle files
 
 print('Aller c est partii')
-filename1 = 'dataNW2_version1/dataNW2_w_store_version1'
-filename2 = 'dataNW2_version1/dataNW2_targets_version1' 
+filename1 = 'dataNW2_w_store_version3'
+filename2 = 'dataNW2_targets_version3' 
 
 if new_gen:
     
@@ -85,7 +99,7 @@ if new_gen:
     #w_store1, target_params1 = gen_batch_data(0, num_div*2, 'train')
     #w_store2, target_params2 = gen_batch_data(0, num_div*2, 'validation')
 
-    w_store, target_params = gen_batch_data(0, num_div*4, 'train')
+    w_store, target_params = gen_batch_data(0, num_samples, 'train')
     print(w_store.shape, target_params.shape)
     
     if nouvel_enregist:
@@ -102,31 +116,26 @@ if via_pickle:
     w_store = pickle.load(open(filename1, 'rb'))
     target_params = pickle.load(open(filename2, 'rb'))    
 
-#%%
-w_store1 = w_store[0:num_div*2, :]
-w_store2 = w_store[num_div*2:num_div*4, :]
-target_params1 = target_params[0:num_div*2, :]
-target_params2 = target_params[num_div*2:num_div*4, :]
-
-print(target_params1[0, :])
-
-w_reshape = np.zeros((num_samples, num_atoms, num_fasc))
-
-w_reshape[0:num_div*2, :,0] = w_store1[:, 0:num_atoms]
-w_reshape[0:num_div*2,:,1] = w_store1[:, num_atoms: 2*num_atoms]
-w_reshape[num_div*2:num_samples,:,0] = w_store2[:, 0:num_atoms]
-w_reshape[num_div*2:num_samples,:,1] = w_store2[:, num_atoms: 2*num_atoms]
-
-print(w_reshape.shape)
-
 # %% Train data
 
 print('----------------------- Data --------------------------')
 
 # divide data in train, test and validation
-x_train = w_reshape[0:2*num_div, :, :]
-x_test = w_reshape[2*num_div : 3*num_div , :, :]
-x_valid = w_reshape[3*num_div : 4*num_div, :, :]
+x_train = np.zeros((num_train_samples, num_atoms, num_fasc))
+x_test = np.zeros((num_div, num_atoms, num_fasc))
+x_valid = np.zeros((num_div, num_atoms, num_fasc))
+
+x_train[:, :, 0] = w_store[0:num_train_samples, 0:num_atoms]
+x_train[:, :, 1] = w_store[0:num_train_samples, num_atoms: 2*num_atoms]
+
+print(num_train_samples)
+print(num_train_samples+num_test_samples)
+print(w_store.shape)
+x_test[:, :, 0] = w_store[num_train_samples:(num_test_samples), 0:num_atoms]
+x_test[:, :, 1] = w_store[num_train_samples:(num_test_samples), num_atoms: 2*num_atoms]
+
+x_valid[:, :, 0] = w_store[(num_test_samples):num_samples, 0:num_atoms]
+x_valid[:, :, 1] = w_store[(num_test_samples):num_samples, num_atoms: 2*num_atoms]
 
 print('x_train size', x_train.shape)
 print('x_test size', x_test.shape)
@@ -146,8 +155,10 @@ x_valid = x_valid.float()
 
 print("--- Taking microstructural properties of fascicles ---")
 
-#Scaling: scaler: (num_samples, num_features)
+target_params1 = target_params[0:num_div*2, :]
+target_params2 = target_params[num_div*2:num_div*4, :]
 
+#Scaling: scaler: (num_samples, num_features)
 scaler_train = StandardScaler()
 target_params1 = scaler_train.fit_transform(target_params1)
 target_params1 = torch.from_numpy(target_params1)
@@ -171,6 +182,11 @@ print(target_train[0, :])
 print('target_train size', target_train.shape)
 print('target_test size', target_test.shape)
 print('target_valid size', target_valid.shape)
+
+# filename = 'model2_scaler2' 
+# with open(filename, 'wb') as f:
+#           pickle.dump(params1, f)
+#           f.close()
 
 
 # %% Defining the networks
@@ -404,19 +420,64 @@ def train_network(params: dict):
 tic = time.time()
 
 trial = train_network(params)
+net_tot = trial['model']
 
 toc = time.time()
 train_time = toc - tic
 print("training time: ", train_time)
 
-filename = 'model2_version1.1' 
-with open(filename, 'wb') as f:
-    pickle.dump(trial, f)
-    f.close()
-     
-#%% Rest
+# Specify a path
+PATH = "M2_version1_StateDict.pt"
+# Save
+torch.save(net_tot.state_dict(), PATH)
 
-print("----------------- Rest -----------------")    
+
+
+# %% Predictions (Testing)
+print('----------------------- Prediction --------------------------')
+
+# predict and time
+tic = time.time()
+output = net_tot(x_test[:,:,0], x_test[:,:,1])
+output = output.detach().numpy()
+toc = time.time()
+predic_time = toc - tic
+print("prediction time: ", predic_time)
+
+# mean absolute scaled error for 6 properties
+mean_err_scaled = np.zeros(6)
+for i in range(6):
+    mean_err_scaled[i] = mean_absolute_error(output[:,i], target_test[:,i])
+
+print("mean_abs_err", mean_err_scaled)
+
+#%%
+
+print("---- Prediction with files -----")
+
+from Classes.Net2_Class import create_Net2
+
+params2 = pickle.load(open('model2_29_params2', 'rb'))
+
+net2 = create_Net2(params2) 
+    
+PATH = "M2_version1_StateDict.pt"
+net2.load_state_dict(torch.load(PATH))
+net2.eval()
+
+output = net2(x_test[:,:,0], x_test[:,:,1])
+output = output.detach().numpy()
+
+# mean absolute scaled error for 6 properties
+mean_err_scaled = np.zeros(6)
+for i in range(6):
+    mean_err_scaled[i] = mean_absolute_error(output[:,i], target_test[:,i])
+
+print("mean_abs_err", mean_err_scaled)
+
+
+#%%Analysis
+
 train_acc = trial['train_acc']
 valid_acc = trial['valid_acc']
 epoch = np.arange(params['num_epochs'])
@@ -434,6 +495,7 @@ meanTrainError = trial['meanTrainError']
 meanValError = trial['meanValError']
 
 # Mean Error --> Learning curve
+
 print(trial['meanTrainError'])
 plt.figure()
 plt.plot(epoch, meanTrainError, 'r', epoch, meanValError, 'b')
@@ -442,34 +504,16 @@ plt.grid(b=True, which='major', color='#666666', linestyle='-')
 plt.minorticks_on()
 plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
 plt.legend(['Mean Train error','Mean Validation error'])
-plt.xlabel('Updates'), plt.ylabel('Error')
+plt.xlabel('Epochs'), plt.ylabel('Mean Scaled Error')
+plt.axis([0, 30, 0, 1])
 plt.show()
 
-
-# %% Predictions (Testing)
-print('----------------------- Prediction --------------------------')
-
-net_tot = trial['model']
-
-# predict and time
-tic = time.time()
-output = net_tot(x_test[:,:,0], x_test[:,:,1])
-output = output.detach().numpy()
-toc = time.time()
-predic_time = toc - tic
-print("prediction time: ", predic_time)
-
-# mean absolute scaled error for 6 properties
-mean_err_scaled = np.zeros(6)
-for i in range(6):
-    mean_err_scaled[i] = mean_absolute_error(output[:,i], target_test[:,i])
-
-print("mean_abs_err", mean_err_scaled)
-
+#%%
 properties = ['nu1', 'r1', 'f1', 'nu2', 'r2', 'f2']
 plt.figure()
-plt.title('Comparison of estimation of the 6 properties')
-plt.ylabel('Absolute error (normalized)')
+plt.title("Scaled Error for each property")
+plt.ylabel("Scaled Error")
+plt.xlabel("properties")
 plt.bar(properties, mean_err_scaled)
 
 # descale
@@ -544,5 +588,3 @@ for j in range(num_params):
 # plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
 # plt.xlabel('nun_w_out'), plt.ylabel('Sum of errors')
 # plt.show()
-
-
