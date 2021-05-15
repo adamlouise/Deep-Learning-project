@@ -49,12 +49,12 @@ M0 = 500
 num_atoms = 782
 
 if use_noise:
-    filename = 'synthetic_data/DW_noisy_store_uniform_50000__lou_version5'
+    filename = 'synthetic_data/DW_noisy_store_uniform_600000__lou_version8'
     y_data = pickle.load(open(filename, 'rb'))
     y_data = y_data/M0
     print('ok noise')
 else:
-    filename = 'synthetic_data/DW_image_store_uniform_50000__lou_version5'
+    filename = 'synthetic_data/DW_image_store_uniform_600000__lou_version8'
     y_data = pickle.load(open(filename, 'rb'))
     print('ok no noise')
 
@@ -102,7 +102,7 @@ print("--- Taking microstructural properties of fascicles ---")
 data_dir = 'synthetic_data'
 
 target_data = util.loadmat(os.path.join('synthetic_data',
-                                            "training_datauniform_50000_samples_lou_version5"))
+                                            "training_datauniform_600000_samples_lou_version8"))
 
 # Substrate (=fingerprint) properties
 IDs = target_data['IDs'][0:num_sample, :]
@@ -152,7 +152,7 @@ target_valid = torch.transpose(target_valid, 0, 1)
 params1 = {
     #Training parameters
     "num_samples": num_sample,
-     "batch_size": 500,  #2500
+     "batch_size": 5000,  #2500
      "num_epochs": 35,
      
      #NW2
@@ -170,10 +170,10 @@ params1 = {
      #hp.choice(hsjdkfhs, )
 }
 
-# filename = 'model1_29_params1' 
-# with open(filename, 'wb') as f:
-#           pickle.dump(params1, f)
-#           f.close()
+filename = 'params/M1_params_16' 
+with open(filename, 'wb') as f:
+          pickle.dump(params1, f)
+          f.close()
 
 # %% Building the network
 
@@ -368,16 +368,22 @@ print("training time:", toc-tic, "[sec]")
 #          pickle.dump(trial, f)
 #          f.close()
 
-# Specify a path
-#PATH = "M1_version1_NoNoise_StateDict.pt"
-#net = trial['model']
+#%% Save net
 
-# Save
-#torch.save(net.state_dict(), PATH)
+# Save net with state dictionary
+PATH = "models_statedic/M1_Noise_StateDict_version8_2.pt"
+net = trial['model']
+torch.save(net.state_dict(), PATH)
 
 # # Pour Load
 # model = torch.load(PATH)
 # model.eval()
+
+# Save trial for results
+filename = "results/M1_trial_version8_2"
+with open(filename, 'wb') as f:
+          pickle.dump(trial, f)
+          f.close()
 
 # filename2 = 'scaler1_version1' 
 # with open(filename2, 'wb') as f:
@@ -404,29 +410,38 @@ fig.suptitle('Learning curve for each property and each fascicle')
 for i in range(2):
     for j in range(3):    
         axs[i,j].plot(epoch, train_acc[:, j], 'r', epoch, valid_acc[:, j], 'b')
-        axs[i,j].axis([0, len(epoch), 0, 1])
+        axs[i,j].axis([0, len(epoch), 0, 0.6])
         if j==0:
             axs[i,j].set_ylabel('Absolute Error')
-        if i==0:
+        if i==1:
             axs[i,j].set_xlabel('Epochs')
         axs[i,j].set_title(labels[j] + ' for fascicle '+ str(i+1))
-        axs[i,j].grid()
+        #axs[i,j].grid()
+        axs[i,j].grid(b=True, which='major', color='#666666', linestyle='-', alpha=0.4)
+        axs[i,j].minorticks_on()
+        axs[i,j].grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
+        #axs[i,j].grid()
         #axs[i,j].legend(['Train error','Validation error'])
-fig.legend(['Train error','Validation error'])       
+fig.legend(['Train error','Validation error'])     
+
+plt.savefig("graphs/NN1_LC_6properties_2.pdf", dpi=150)  
 
 ## - 2 - Graoh for learning curve of Mean Error
 
-plt.figure()
-plt.plot(epoch, meanTrainError, 'r', epoch, meanValError, 'b')
-plt.title('5000 samples')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-#plt.minorticks_on()
-#plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-#plt.grid()
-plt.legend(['Mean Train error','Mean Validation error'])
-plt.xlabel('Epochs'), plt.ylabel('Mean Scaled Error')
-plt.axis([0, len(epoch)-5, 0, 1])
-plt.show()
+fig3, axs3 = plt.subplots(1, 1)
+
+fig3.suptitle('Learning curve with 400 000 training samples')
+axs3.plot(epoch, meanTrainError, 'r', epoch, meanValError, 'b')
+axs3.grid(b=True, which='major', color='#666666', linestyle='-', alpha=0.4)
+axs3.minorticks_on()
+axs3.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
+#axs3.grid()
+fig3.legend(['Mean Train error','Mean Validation error'])
+axs3.set_xlabel('Epochs'), 
+axs3.set_ylabel('Mean Scaled Error')
+axs3.axis([0, len(epoch)-5, 0, 0.6])
+
+plt.savefig("graphs/NN1_LC_MeanError_2.pdf", dpi=150) 
 
 ## - 3 - Graph for Learning curve of 3 properties (mean over fascicles)
 
@@ -434,14 +449,19 @@ fig2, axs2 = plt.subplots(1, 3, sharey='row', figsize=(15,4))
 fig2.suptitle('Learning curve for each property - mean over fascicles')
 for j in range(3):    
     axs2[j].plot(epoch, (train_acc[:, j]+train_acc[:, j+3])/2, 'r', epoch, (valid_acc[:, j]+valid_acc[:, j+3])/2, 'b')
-    axs2[j].axis([0, len(epoch), 0, 1])
+    axs2[j].axis([0, len(epoch), 0, 0.6])
     if j==0:
         axs2[j].set_ylabel('Absolute Error')
     axs2[j].set_xlabel('Epochs')
     axs2[j].set_title(labels[j])
-    axs2[j].grid()
+    axs2[j].grid(b=True, which='major', color='#666666', linestyle='-', alpha=0.4)
+    axs2[j].minorticks_on()
+    axs2[j].grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
+    #axs2[j].grid()
 
 fig2.legend(['Train error','Validation error'])  
+
+plt.savefig("graphs/NN1_LC_3prop_2.pdf", dpi=150) 
 
 
 #%% Predictions
@@ -468,7 +488,9 @@ for i in range(6):
 
 properties = ['nu 1', 'rad 1', 'fin 1', 'nu 2', 'rad 2', 'fin 2']
 plt.figure()
-plt.bar(properties, mean_err_scaled)
+plt.bar(properties, mean_err_scaled, width=0.5)
+
+plt.savefig("graphs/NN1_bars.pdf", dpi=150)  
  
 # output = scaler1.inverse_transform(output)
 # target_scaled = scaler1.inverse_transform(target_test)
@@ -499,6 +521,9 @@ plt.bar(properties, mean_err_scaled)
 
 #%% 95% interval
 
+from scipy import stats
+
+output = scaler1.inverse_transform(output)
 target_scaled = scaler1.inverse_transform(target_test)
 
 error = output - target_scaled
@@ -510,10 +535,10 @@ for j in range(num_params):
     mean = np.mean(data)
     sigma = np.std(data)
     
-    confint = stats.norm.interval(0.95, loc=mean, 
-        scale=sigma)
+    confint = stats.norm.interval(0.95, loc=mean, scale=sigma)
     
     print(confint)
+    print((-confint[0]+confint[1])/2)
 
 # %%Testing Optimisation
 

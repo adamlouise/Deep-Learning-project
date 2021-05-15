@@ -39,15 +39,16 @@ from sklearn.metrics import mean_absolute_error
 num_atoms = 782
 num_fasc = 2
 num_params = 6 #nombre de paramètres à estimer: ['nu1', 'r1 ', 'f1 ', 'nu2', 'r2 ', 'f2 ']
-new_gen = True
-nouvel_enregist = True
-via_pickle = False
+new_gen = False
+nouvel_enregist = False
+via_pickle = True
+new_training = True
 
 params = {
     #Training parameters
-    "num_samples": 50000,
-     "batch_size": 1000,  
-     "num_epochs": 30,
+    "num_samples": 600000,
+     "batch_size": 5000,  
+     "num_epochs": 35,
      
      #NW1 parameters
      #"num_w_out": hp.choice("num_w_out", [3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30] ),
@@ -70,16 +71,16 @@ params = {
 }
 
 num_samples = params["num_samples"]
-num_div = int(num_samples/4)
+num_div = int(num_samples/6)
 
-num_train_samples = int(num_div*2)
+num_train_samples = int(num_div*4)
 num_test_samples = int(num_train_samples + num_div)
 num_valid_samples = int(num_test_samples + num_div)
 
 if (num_samples != num_valid_samples):
     raise "Division of data in train, test, valid does not work"
 
-filename = 'model2_29_params2' 
+filename = 'params/M2_params_16' 
 with open(filename, 'wb') as f:
           pickle.dump(params, f)
           f.close()
@@ -87,17 +88,14 @@ with open(filename, 'wb') as f:
 # %% Data via pickle files
 
 print('Aller c est partii')
-filename1 = 'dataNW2_w_store_version3'
-filename2 = 'dataNW2_targets_version3' 
+filename1 = 'synthetic_data/dataNW2_w_store_version8'
+filename2 = 'synthetic_data/dataNW2_targets_version8' 
 
 if new_gen:
     
     print("on load avec gen_batch_data")
     
     from getDataW import gen_batch_data
-
-    #w_store1, target_params1 = gen_batch_data(0, num_div*2, 'train')
-    #w_store2, target_params2 = gen_batch_data(0, num_div*2, 'validation')
 
     w_store, target_params = gen_batch_data(0, num_samples, 'train')
     print(w_store.shape, target_params.shape)
@@ -129,7 +127,7 @@ x_train[:, :, 0] = w_store[0:num_train_samples, 0:num_atoms]
 x_train[:, :, 1] = w_store[0:num_train_samples, num_atoms: 2*num_atoms]
 
 print(num_train_samples)
-print(num_train_samples+num_test_samples)
+print(num_test_samples)
 print(w_store.shape)
 x_test[:, :, 0] = w_store[num_train_samples:(num_test_samples), 0:num_atoms]
 x_test[:, :, 1] = w_store[num_train_samples:(num_test_samples), num_atoms: 2*num_atoms]
@@ -155,23 +153,16 @@ x_valid = x_valid.float()
 
 print("--- Taking microstructural properties of fascicles ---")
 
-target_params1 = target_params[0:num_div*2, :]
-target_params2 = target_params[num_div*2:num_div*4, :]
-
 #Scaling: scaler: (num_samples, num_features)
-scaler_train = StandardScaler()
-target_params1 = scaler_train.fit_transform(target_params1)
-target_params1 = torch.from_numpy(target_params1)
-
-scaler_valid = StandardScaler()
-target_params2 = scaler_valid.fit_transform(target_params2)
-target_params2 = torch.from_numpy(target_params2)
+scaler2 = StandardScaler()
+target_params = scaler2.fit_transform(target_params)
+target_params = torch.from_numpy(target_params)
 
 ## Dividing in train test and valid
 
-target_train = target_params1[:, :]
-target_test = target_params2[0:num_div, :]
-target_valid = target_params2[num_div:2*num_div, :]
+target_train = target_params[:num_train_samples, :]
+target_test = target_params[num_train_samples:num_test_samples, :]
+target_valid = target_params[num_test_samples:num_samples, :]
 
 target_train = target_train.float()
 target_test = target_test.float()
@@ -318,9 +309,9 @@ def train_network(params: dict):
     batch_size = params["batch_size"] #100 
     num_epochs = params["num_epochs"] #200
     
-    num_samples_train = int(num_samples/2)
+    num_samples_train = num_train_samples
     num_batches_train = num_samples_train // batch_size #??
-    num_samples_valid = int(num_samples/4)
+    num_samples_valid = num_div
     num_batches_valid = num_samples_valid // batch_size
     
     print(num_batches_train, num_batches_valid)
@@ -426,12 +417,98 @@ toc = time.time()
 train_time = toc - tic
 print("training time: ", train_time)
 
-# Specify a path
-PATH = "M2_version1_StateDict.pt"
-# Save
-torch.save(net_tot.state_dict(), PATH)
+#%% Save 
+
+save_net = True
+save_res = True
+
+if save_net:
+    PATH = "models_statedic/M2_version8_StateDict.pt"
+    torch.save(net_tot.state_dict(), PATH)
+
+if save_res:
+    filename = 'results/M2_trial_version8' 
+    with open(filename, 'wb') as f:
+              pickle.dump(trial, f)
+              f.close()
 
 
+#%% Graphs for Learning
+
+#import matplotlib.pyplot as plt
+
+if new_training==False:
+    filename = 'results/NN2_trial_version8'
+    trial = pickle.load(open(filename, 'rb'))
+
+train_acc = trial['train_acc']
+valid_acc = trial['valid_acc']
+epoch = np.arange(params['num_epochs'])
+
+meanTrainError = trial['meanTrainError']
+meanValError = trial['meanValError']
+
+labels = ['nu', 'radius', 'fin']
+
+## - 1 - Graph for Learning curve of 6 properties
+
+fig, axs = plt.subplots(2, 3, sharey='row', sharex = 'col', figsize=(11,7))
+fig.suptitle('Learning curve for each property and each fascicle')
+for i in range(2):
+    for j in range(3):    
+        axs[i,j].plot(epoch, train_acc[:, j], 'r', epoch, valid_acc[:, j], 'b')
+        axs[i,j].axis([0, len(epoch), 0, 0.6])
+        if j==0:
+            axs[i,j].set_ylabel('Absolute Error')
+        if i==1:
+            axs[i,j].set_xlabel('Epochs')
+        axs[i,j].set_title(labels[j] + ' for fascicle '+ str(i+1))
+        #axs[i,j].grid()
+        axs[i,j].grid(b=True, which='major', color='#666666', linestyle='-', alpha=0.4)
+        axs[i,j].minorticks_on()
+        axs[i,j].grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
+        #axs[i,j].grid()
+        #axs[i,j].legend(['Train error','Validation error'])
+fig.legend(['Train error','Validation error'])     
+
+plt.savefig("graphs/NN2_LC_6properties.pdf", dpi=150)  
+
+## - 2 - Graoh for learning curve of Mean Error
+
+fig3, axs3 = plt.subplots(1, 1)
+
+fig3.suptitle('Learning curve with 400 000 training samples')
+axs3.plot(epoch, meanTrainError, 'r', epoch, meanValError, 'b')
+axs3.grid(b=True, which='major', color='#666666', linestyle='-', alpha=0.4)
+axs3.minorticks_on()
+axs3.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
+#axs3.grid()
+fig3.legend(['Mean Train error','Mean Validation error'])
+axs3.set_xlabel('Epochs'), 
+axs3.set_ylabel('Mean Scaled Error')
+axs3.axis([0, len(epoch)-5, 0, 0.6])
+
+plt.savefig("graphs/NN2_LC_MeanError.pdf", dpi=150) 
+
+## - 3 - Graph for Learning curve of 3 properties (mean over fascicles)
+
+fig2, axs2 = plt.subplots(1, 3, sharey='row', figsize=(15,4))
+fig2.suptitle('Learning curve for each property - mean over fascicles')
+for j in range(3):    
+    axs2[j].plot(epoch, (train_acc[:, j]+train_acc[:, j+3])/2, 'r', epoch, (valid_acc[:, j]+valid_acc[:, j+3])/2, 'b')
+    axs2[j].axis([0, len(epoch), 0, 0.6])
+    if j==0:
+        axs2[j].set_ylabel('Absolute Error')
+    axs2[j].set_xlabel('Epochs')
+    axs2[j].set_title(labels[j])
+    axs2[j].grid(b=True, which='major', color='#666666', linestyle='-', alpha=0.4)
+    axs2[j].minorticks_on()
+    axs2[j].grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
+    #axs2[j].grid()
+
+fig2.legend(['Train error','Validation error'])  
+
+plt.savefig("graphs/NN2_LC_3prop.pdf", dpi=150) 
 
 # %% Predictions (Testing)
 print('----------------------- Prediction --------------------------')
@@ -478,57 +555,57 @@ print("mean_abs_err", mean_err_scaled)
 
 #%%Analysis
 
-train_acc = trial['train_acc']
-valid_acc = trial['valid_acc']
-epoch = np.arange(params['num_epochs'])
+# train_acc = trial['train_acc']
+# valid_acc = trial['valid_acc']
+# epoch = np.arange(params['num_epochs'])
 
-mean_train_error = trial['meanTrainError']
+# mean_train_error = trial['meanTrainError']
 
-for j in range(num_params):    
-    plt.figure()
-    plt.plot(epoch, train_acc[:, j], 'r', epoch, valid_acc[:, j], 'b')
-    plt.legend(['Train error','Validation error'])
-    plt.xlabel('Updates'), plt.ylabel('Error')
-    plt.show()
+# for j in range(num_params):    
+#     plt.figure()
+#     plt.plot(epoch, train_acc[:, j], 'r', epoch, valid_acc[:, j], 'b')
+#     plt.legend(['Train error','Validation error'])
+#     plt.xlabel('Updates'), plt.ylabel('Error')
+#     plt.show()
     
-meanTrainError = trial['meanTrainError']
-meanValError = trial['meanValError']
+# meanTrainError = trial['meanTrainError']
+# meanValError = trial['meanValError']
 
-# Mean Error --> Learning curve
+# # Mean Error --> Learning curve
 
-print(trial['meanTrainError'])
-plt.figure()
-plt.plot(epoch, meanTrainError, 'r', epoch, meanValError, 'b')
-plt.title('Learning Curve: Mean Error - DL after NNLS')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.legend(['Mean Train error','Mean Validation error'])
-plt.xlabel('Epochs'), plt.ylabel('Mean Scaled Error')
-plt.axis([0, 30, 0, 1])
-plt.show()
+# print(trial['meanTrainError'])
+# plt.figure()
+# plt.plot(epoch, meanTrainError, 'r', epoch, meanValError, 'b')
+# plt.title('Learning Curve: Mean Error - DL after NNLS')
+# plt.grid(b=True, which='major', color='#666666', linestyle='-')
+# plt.minorticks_on()
+# plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
+# plt.legend(['Mean Train error','Mean Validation error'])
+# plt.xlabel('Epochs'), plt.ylabel('Mean Scaled Error')
+# plt.axis([0, 30, 0, 1])
+# plt.show()
 
 #%%
-properties = ['nu1', 'r1', 'f1', 'nu2', 'r2', 'f2']
-plt.figure()
-plt.title("Scaled Error for each property")
-plt.ylabel("Scaled Error")
-plt.xlabel("properties")
-plt.bar(properties, mean_err_scaled)
+# properties = ['nu1', 'r1', 'f1', 'nu2', 'r2', 'f2']
+# plt.figure()
+# plt.title("Scaled Error for each property")
+# plt.ylabel("Scaled Error")
+# plt.xlabel("properties")
+# plt.bar(properties, mean_err_scaled)
 
-# descale
-output = scaler_valid.inverse_transform(output)
-target_test = scaler_valid.inverse_transform(target_test)
+# # descale
+# output = scaler_valid.inverse_transform(output)
+# target_test = scaler_valid.inverse_transform(target_test)
 
-error = output - target_test
+# error = output - target_test
 
-abserror = abs(error)
+# abserror = abs(error)
 
-plt.figure()
-plt.hist(abserror[:,0], density=False, bins=30)  # `density=False` would make counts
-plt.ylabel('Probability')
-plt.xlabel('Data')
-plt.show()
+# plt.figure()
+# plt.hist(abserror[:,0], density=False, bins=30)  # `density=False` would make counts
+# plt.ylabel('Probability')
+# plt.xlabel('Data')
+# plt.show()
 
 #%% obtenir 95% interval
 

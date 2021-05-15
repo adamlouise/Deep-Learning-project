@@ -64,7 +64,7 @@ use_prerot = False  # use pre-rotated dictionaries
 sparse = True  # store data sparsely to save space
 save_res = False  # save mat file containing data
 SNR_dist = 'uniform'  # 'uniform' or 'triangular'
-num_samples = 600000
+num_samples = 15000
 save_dir = 'synthetic_data'  # destination folder
 
 # Initiate random number generator (to make results reproducible)
@@ -241,167 +241,174 @@ nnz_cnt = 0  # non-zero entries (just for sparse case)
 
 plt.close('all')
 
-# Tester une direction 1 constante mais pas l'axe z
-# cyldir_1 = np.array([1/np.sqrt(2), 1/np.sqrt(2), 0])
-# dic_sing_fasc1 = util.rotate_atom(dic_sing_fasc,
-#                                  sch_mat_b0, refdir, cyldir_1,  # once and for all
-#                                  WM_DIFF, S0_fasc[:, ID_1])
+i = 0
+num_it = 1000
+nu_min_values = [0.5, 0.4, 0.3, 0.2, 0.1]
+SNR_min_values = [10, 30, 50]
+for nu_min in nu_min_values:
+    nu_max = 1-nu_min
+    for SNR_ind in range(len(SNR_min_values)):
+        SNR_min = SNR_min_values[SNR_ind]
+        
 
-for i in range(num_samples):
-    nu1 = nu_min + (nu_max - nu_min) * np.random.rand()
-    nu2 = 1 - nu1
-    ID_1 = np.random.randint(0, num_atoms)
-    ID_2 = np.random.randint(0, num_atoms)
-    if SNR_dist == 'triangular':
-        SNR = np.random.triangular(SNR_min, SNR_min, SNR_max, 1)
-    elif SNR_dist == 'uniform':
-        SNR = np.random.uniform(SNR_min, SNR_max, 1)
-    else:
-        raise ValueError("Unknown SNR distribution %s" % SNR_dist)
-
-    sigma_g = S0_max/SNR
-
-    # NEW way to create groundtruth
-    # norm1 = -1
-    # while norm1 <= 0:
-    #     cyldir_1 = np.random.randn(3)
-    #     norm1 = np.linalg.norm(cyldir_1, 2)
-    # cyldir_1 = cyldir_1/norm1  # get unit vector
-
-    # generate second direction making sure it's not too close to first
-    cyldir_1 = refdir # enlever su premiere direction aleatoire
-    cyldir_2 = cyldir_1.copy()
-    while np.abs(np.dot(cyldir_1, cyldir_2)) > np.cos(crossangle_min):
-        norm2 = -1
-        while norm2 <= 0:
-            cyldir_2 = np.random.randn(3)
-            norm2 = np.sqrt(np.sum(cyldir_2**2))
-        cyldir_2 = cyldir_2/norm2
-    crossang = np.arccos(np.abs(np.dot(cyldir_1, cyldir_2))) * 180/np.pi
-
-    # sig_fasc1 = util.rotate_atom(dic_sing_fasc[:, ID_1],
-    #                              sch_mat_b0, refdir, cyldir_1,
-    #                              WM_DIFF, S0_fasc[:, ID_1])
-    sig_fasc1 = dic_sing_fasc[:, ID_1]
-    sig_fasc2 = util.rotate_atom(dic_sing_fasc[:, ID_2],
-                                 sch_mat_b0, refdir, cyldir_2,
-                                 WM_DIFF, S0_fasc[:, ID_2])
-
-    DW_image = nu1 * sig_fasc1 + nu2 * sig_fasc2
-
-    # Simulate noise and MRI scanner scaling
-    DW_image_store[:, i] = DW_image
-
-    DW_image_noisy = util.gen_SoS_MRI(DW_image, sigma_g, num_coils)
-    DW_image_noisy = M0 * DW_image_noisy
-
-    DW_noisy_store[:, i] = DW_image_noisy
-
-    # Estimate peak directions from noisy signal
-    peaks = get_csd_peaks(DW_image_noisy, sch_mat_b0, num_fasc)
-
-    # Analyze result of CSD (just for displaying progress). You only need to
-    # store the groundtruth and estimated directions to compute all these
-    # metrics afterwards.
-    num_pk_detected = np.sum(np.sum(np.abs(peaks), axis=1) > 0)
-
-    if num_pk_detected < num_fasc:
-        # There should always be at least 1 detected peak because the ODF
-        # always has a max.
-        # Pick second direction randomly on a cone centered around first
-        # direction with angle set to min separation angle above.
-        # Using the same direction will lead to problems with NNLS down the
-        # line with a poorly conditioned matrix (since the same submatrix
-        # will be repeated)
-        peaks[1] = peaks[0].copy()
-        rot_ax = util.get_perp_vector(peaks[1])
-        peaks[1] = util.rotate_vector(peaks[0], rot_ax, crossangle_min)
-
-    # Match detected peaks to groundtruth peaks, i.e. either swap peaks[0]
-    # and peaks[1] or don't swap. Rigorously, this should not be done but it
-    # considerably eases posterior analyses because there is a greater chance
-    # that fascicles match.
-
-    # Compare two possibilities in terms of absolute dot product (inversely
-    # proportional to angular separation)
-    dp_1 = (np.abs(np.dot(peaks[0], cyldir_1))
-            + np.abs(np.dot(peaks[1], cyldir_2)))
-    dp_2 = (np.abs(np.dot(peaks[0], cyldir_2))
-            + np.abs(np.dot(peaks[1], cyldir_1)))
-    if dp_1 > dp_2:
-        est_dir1 = peaks[0]
-        est_dir2 = peaks[1]
-    else:
-        est_dir1 = peaks[1]
-        est_dir2 = peaks[0]
-    cos_11 = np.clip(np.abs(np.dot(est_dir1, cyldir_1)), 0, 1)
-    cos_22 = np.clip(np.abs(np.dot(est_dir2, cyldir_2)), 0, 1)
-    mean_ang_err = 0.5*(np.arccos(cos_11) + np.arccos(cos_22))*180/np.pi
-    crossang_est = np.arccos(np.abs(np.dot(est_dir1, est_dir2))) * 180/np.pi
-#    print('Sample %d/%d : SNR=%d, nu1=%gn ang=%gdeg\n\tdetected %d peak(s),'
-#          ' mean angular error %g deg, ang sep %gdeg.' %
-#          (i+1, num_samples, SNR, nu1, crossang,
-#           num_pk_detected, mean_ang_err, crossang_est))
-
-    # Create big dictionary. Rotate dic_sing_fasc along estimated
-    # cyldir_1 and cyldir_2.
-    # !! In theory we should use peaks[0] and peaks[1] directly from the peak
-    # estimation routine.
-    # However to simplify the analysis of estimates down the line, we will
-    # use est_dir1 and est_dir2 (which is simply a 'smart' swap). That way
-    # the estimates of fascicle 1 will match the groundtruth fascicle 1 and
-    # we won't have to swap.
-    start_rot = time.time()
-    dictionary[:, :num_atoms] = util.rotate_atom(dic_sing_fasc,
-                                                 sch_mat_b0,
-                                                 refdir,
-                                                 est_dir1,
-                                                 WM_DIFF, S0_fasc)
-    dictionary[:, num_atoms:] = util.rotate_atom(dic_sing_fasc,
-                                                 sch_mat_b0,
-                                                 refdir,
-                                                 est_dir2,
-                                                 WM_DIFF, S0_fasc)
-    time_rot_hist[i] = time.time() - start_rot
-
-    # Solve NNLS
-    norm_DW = np.max(DW_image_noisy[sch_mat_b0[:, 3] == 0])
-    (w_nnls,
-     PP,
-     _) = util.nnls_underdetermined(dictionary,
-                                    DW_image_noisy/norm_DW)
-
-    # Store
-    IDs[i, :] = np.array([ID_1, ID_2])
-    nus[i, :] = np.array([nu1, nu2])
-    SNRs[i] = SNR
-    nnz_hist[i] = PP.size
-    orientations[i, 0, :] = cyldir_1
-    orientations[i, 1, :] = cyldir_2
-    # Again, rigorously this should be est_orientations[i, ...] = peaks
-    est_orientations[i, 0, :] = est_dir1
-    est_orientations[i, 1, :] = est_dir2
-    if sparse:
-        # Check size and double it if needed
-        if nnz_cnt + PP.size > w_data.shape[0]:
-            w_idx = np.concatenate((w_idx, np.zeros(w_idx.shape)), axis=0)
-            w_data = np.concatenate((w_data, np.zeros(w_data.shape)), axis=0)
-            print("Doubled size of index and weight arrays after sample %d "
-                  "(adding %d non-zero elements to %d, exceeding arrays' "
-                  " size of %d)"
-                  % (i+1, PP.size, nnz_cnt, w_data.shape[0]))
-        w_data[nnz_cnt:nnz_cnt+PP.size] = w_nnls[PP]
-
-        w_idx[nnz_cnt:nnz_cnt+PP.size, 0] = i  # row indices
-        w_idx[nnz_cnt:nnz_cnt+PP.size, 1] = PP  # column indices
-
-        nnz_cnt += PP.size
-    else:
-        w_store[i, :] = w_nnls
-
-    # Log progress
-    if i % 1000 == 0:
-        print('Generated voxel %d/%d' % (i+1, num_samples))
+        for j in range(num_it):
+            
+            nu1 = nu_min + (nu_max - nu_min) * np.random.rand()
+            nu2 = 1 - nu1
+            ID_1 = np.random.randint(0, num_atoms)
+            ID_2 = np.random.randint(0, num_atoms)
+            if SNR_dist == 'triangular':
+                SNR = np.random.triangular(SNR_min, SNR_min, SNR_max, 1)
+            elif SNR_dist == 'uniform':
+                SNR = np.random.uniform(SNR_min, SNR_max, 1)
+            else:
+                raise ValueError("Unknown SNR distribution %s" % SNR_dist)
+        
+            sigma_g = S0_max/SNR
+        
+            # NEW way to create groundtruth
+            # norm1 = -1
+            # while norm1 <= 0:
+            #     cyldir_1 = np.random.randn(3)
+            #     norm1 = np.linalg.norm(cyldir_1, 2)
+            # cyldir_1 = cyldir_1/norm1  # get unit vector
+        
+            # generate second direction making sure it's not too close to first
+            cyldir_1 = refdir # enlever su premiere direction aleatoire
+            cyldir_2 = cyldir_1.copy()
+            while np.abs(np.dot(cyldir_1, cyldir_2)) > np.cos(crossangle_min):
+                norm2 = -1
+                while norm2 <= 0:
+                    cyldir_2 = np.random.randn(3)
+                    norm2 = np.sqrt(np.sum(cyldir_2**2))
+                cyldir_2 = cyldir_2/norm2
+            crossang = np.arccos(np.abs(np.dot(cyldir_1, cyldir_2))) * 180/np.pi
+        
+            # sig_fasc1 = util.rotate_atom(dic_sing_fasc[:, ID_1],
+            #                              sch_mat_b0, refdir, cyldir_1,
+            #                              WM_DIFF, S0_fasc[:, ID_1])
+            sig_fasc1 = dic_sing_fasc[:, ID_1]
+            sig_fasc2 = util.rotate_atom(dic_sing_fasc[:, ID_2],
+                                         sch_mat_b0, refdir, cyldir_2,
+                                         WM_DIFF, S0_fasc[:, ID_2])
+        
+            DW_image = nu1 * sig_fasc1 + nu2 * sig_fasc2
+        
+            # Simulate noise and MRI scanner scaling
+            DW_image_store[:, i] = DW_image
+        
+            DW_image_noisy = util.gen_SoS_MRI(DW_image, sigma_g, num_coils)
+            DW_image_noisy = M0 * DW_image_noisy
+        
+            DW_noisy_store[:, i] = DW_image_noisy
+        
+            # Estimate peak directions from noisy signal
+            peaks = get_csd_peaks(DW_image_noisy, sch_mat_b0, num_fasc)
+        
+            # Analyze result of CSD (just for displaying progress). You only need to
+            # store the groundtruth and estimated directions to compute all these
+            # metrics afterwards.
+            num_pk_detected = np.sum(np.sum(np.abs(peaks), axis=1) > 0)
+        
+            if num_pk_detected < num_fasc:
+                # There should always be at least 1 detected peak because the ODF
+                # always has a max.
+                # Pick second direction randomly on a cone centered around first
+                # direction with angle set to min separation angle above.
+                # Using the same direction will lead to problems with NNLS down the
+                # line with a poorly conditioned matrix (since the same submatrix
+                # will be repeated)
+                peaks[1] = peaks[0].copy()
+                rot_ax = util.get_perp_vector(peaks[1])
+                peaks[1] = util.rotate_vector(peaks[0], rot_ax, crossangle_min)
+        
+            # Match detected peaks to groundtruth peaks, i.e. either swap peaks[0]
+            # and peaks[1] or don't swap. Rigorously, this should not be done but it
+            # considerably eases posterior analyses because there is a greater chance
+            # that fascicles match.
+        
+            # Compare two possibilities in terms of absolute dot product (inversely
+            # proportional to angular separation)
+            dp_1 = (np.abs(np.dot(peaks[0], cyldir_1))
+                    + np.abs(np.dot(peaks[1], cyldir_2)))
+            dp_2 = (np.abs(np.dot(peaks[0], cyldir_2))
+                    + np.abs(np.dot(peaks[1], cyldir_1)))
+            if dp_1 > dp_2:
+                est_dir1 = peaks[0]
+                est_dir2 = peaks[1]
+            else:
+                est_dir1 = peaks[1]
+                est_dir2 = peaks[0]
+            cos_11 = np.clip(np.abs(np.dot(est_dir1, cyldir_1)), 0, 1)
+            cos_22 = np.clip(np.abs(np.dot(est_dir2, cyldir_2)), 0, 1)
+            mean_ang_err = 0.5*(np.arccos(cos_11) + np.arccos(cos_22))*180/np.pi
+            crossang_est = np.arccos(np.abs(np.dot(est_dir1, est_dir2))) * 180/np.pi
+        #    print('Sample %d/%d : SNR=%d, nu1=%gn ang=%gdeg\n\tdetected %d peak(s),'
+        #          ' mean angular error %g deg, ang sep %gdeg.' %
+        #          (i+1, num_samples, SNR, nu1, crossang,
+        #           num_pk_detected, mean_ang_err, crossang_est))
+        
+            # Create big dictionary. Rotate dic_sing_fasc along estimated
+            # cyldir_1 and cyldir_2.
+            # !! In theory we should use peaks[0] and peaks[1] directly from the peak
+            # estimation routine.
+            # However to simplify the analysis of estimates down the line, we will
+            # use est_dir1 and est_dir2 (which is simply a 'smart' swap). That way
+            # the estimates of fascicle 1 will match the groundtruth fascicle 1 and
+            # we won't have to swap.
+            start_rot = time.time()
+            dictionary[:, :num_atoms] = util.rotate_atom(dic_sing_fasc,
+                                                         sch_mat_b0,
+                                                         refdir,
+                                                         est_dir1,
+                                                         WM_DIFF, S0_fasc)
+            dictionary[:, num_atoms:] = util.rotate_atom(dic_sing_fasc,
+                                                         sch_mat_b0,
+                                                         refdir,
+                                                         est_dir2,
+                                                         WM_DIFF, S0_fasc)
+            time_rot_hist[i] = time.time() - start_rot
+        
+            # Solve NNLS
+            norm_DW = np.max(DW_image_noisy[sch_mat_b0[:, 3] == 0])
+            (w_nnls,
+             PP,
+             _) = util.nnls_underdetermined(dictionary,
+                                            DW_image_noisy/norm_DW)
+        
+            # Store
+            IDs[i, :] = np.array([ID_1, ID_2])
+            nus[i, :] = np.array([nu1, nu2])
+            SNRs[i] = SNR
+            nnz_hist[i] = PP.size
+            orientations[i, 0, :] = cyldir_1
+            orientations[i, 1, :] = cyldir_2
+            # Again, rigorously this should be est_orientations[i, ...] = peaks
+            est_orientations[i, 0, :] = est_dir1
+            est_orientations[i, 1, :] = est_dir2
+            if sparse:
+                # Check size and double it if needed
+                if nnz_cnt + PP.size > w_data.shape[0]:
+                    w_idx = np.concatenate((w_idx, np.zeros(w_idx.shape)), axis=0)
+                    w_data = np.concatenate((w_data, np.zeros(w_data.shape)), axis=0)
+                    print("Doubled size of index and weight arrays after sample %d "
+                          "(adding %d non-zero elements to %d, exceeding arrays' "
+                          " size of %d)"
+                          % (i+1, PP.size, nnz_cnt, w_data.shape[0]))
+                w_data[nnz_cnt:nnz_cnt+PP.size] = w_nnls[PP]
+        
+                w_idx[nnz_cnt:nnz_cnt+PP.size, 0] = i  # row indices
+                w_idx[nnz_cnt:nnz_cnt+PP.size, 1] = PP  # column indices
+        
+                nnz_cnt += PP.size
+            else:
+                w_store[i, :] = w_nnls
+        
+            # Log progress
+            if i % 1000 == 0:
+                print('Generated voxel %d/%d' % (i+1, num_samples))
+                
+            i = i + 1
 
 if sparse:
     # Discard unused memory
@@ -467,7 +474,7 @@ if save_res:
         SNR_str = '_triangSNR'
     else:
         raise ValueError('Unknown SNR distribution %s' % SNR_dist)
-    fname = os.path.join(save_dir, "training_data%s_%d_samples_lou_version8" %
+    fname = os.path.join(save_dir, "training_data%s_%d_samples_lou_TEST1" %
                          (SNR_str, num_samples))
     scio.savemat(fname,
                  mdict,
@@ -528,17 +535,17 @@ Detect missed fascicles by orientation estimation procedure:
 
 import pickle
 
-save_dir = 'synthetic_data' 
-SNR_str = 'uniform'
-num_samples = 600000
-filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_version8" %
+# save_dir = 'synthetic_data' 
+# SNR_str = 'uniform'
+# num_samples = 600000
+filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_TEST1" %
                           (SNR_str, num_samples))
-# filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_version8" %
-#                           (SNR_str, num_samples))
+filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_TEST1" %
+                          (SNR_str, num_samples))
 
 with open(filename1, 'wb') as f:
     pickle.dump(DW_image_store, f)
     f.close()
-# with open(filename2, 'wb') as f:
-#     pickle.dump(DW_noisy_store, f)
-#     f.close()
+with open(filename2, 'wb') as f:
+    pickle.dump(DW_noisy_store, f)
+    f.close()

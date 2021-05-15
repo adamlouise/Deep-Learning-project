@@ -47,17 +47,16 @@ if big_set:
     print("big_set")
     print('data')
     if use_noise:
-        filename = 'synthetic_data/DW_noisy_store__1000000__lou_version1'
+        filename = 'synthetic_data/DW_noisy_store_uniform_600000__lou_version8'
         data = pickle.load(open(filename, 'rb'))
         data = data/M0
     else:
-        filename = 'synthetic_data/DW_image_store__1000000__lou_version1'
+        filename = 'synthetic_data/DW_image_store_uniform_600000__lou_version8'
         data = pickle.load(open(filename, 'rb'))
     
     print('target')
     parameters = util.loadmat(os.path.join('synthetic_data',
-                                            "training_data_"
-                                            "1000000_samples_lou_version1"))
+                                            "training_datauniform_600000_samples_lou_version8"))
         
 if small_set:
     print("small_set")
@@ -75,8 +74,8 @@ if small_set:
 
 #%% Reshaping for num_samples
 #M, num_sample = data.shape #M=552
-num_sample = 600000
-num_div = num_sample/2
+num_sample = 90000
+num_div = num_sample/6
 
 if big_set:
     IDs = parameters['IDs'][0:num_sample, :]
@@ -86,8 +85,8 @@ if small_set:
     nus = nus_2[0:num_sample, :]
     
 # divide data in train and test
-x_train = data[:, 0:int(num_div)].T
-x_test = data[:, int(num_div) : int(2*num_div) ].T
+x_train = data[:, 0:int(4*num_div)].T
+x_test = data[:, int(4*num_div) : int(6*num_div) ].T
 
 #print(x_train)
 print('x_train size', x_train.shape)
@@ -129,44 +128,12 @@ target_params = target_params.T
 
 ## Dividing in train test and valid
 prop = 3 #between 0 and 5: the property we will predict
-target_train = target_params[:, 0:int(num_div)].T
-target_test = target_params[:, int(num_div) : int(2*num_div) ].T
+target_train = target_params[:, 0:int(num_div*4)].T
+target_test = target_params[:, int(num_div*4) : int(6*num_div) ].T
 
 print('target_train size', target_train.shape)
 print('target_test size', target_test.shape)
 
-
-#%% Decision tree
-
-# Fit regression model
-#regr_1 = DecisionTreeRegressor(max_depth=2)
-#regr_2 = DecisionTreeRegressor(max_depth=5)
-#regr_1.fit(x_train, target_train)
-#regr_2.fit(x_train, target_train)
-
-# Predict
-#y_1 = regr_1.predict(x_test)
-#y_2 = regr_2.predict(x_test)
-
-# Plot the results
-
-## Graohe nul
-
-# print(x_train.shape, target_train.shape)
-# plt.figure()
-# plt.plot(range(100), target_test, color="red", label="target", linewidth=2)
-# plt.plot(range(100), y_1, color="cornflowerblue",
-#          label="max_depth=2", linewidth=2)
-# plt.plot(range(100), y_2, color="yellowgreen", label="max_depth=5", linewidth=2)
-# plt.xlabel("data")
-# plt.ylabel("target")
-# plt.title("Decision Tree Regression")
-# plt.legend()
-# plt.show()
-
-# error1 = np.mean(abs(y_1 - target_test))
-# error2 = np.mean(abs(y_2 - target_test))
-# print("Trees:", error1, error2)
 
 
 #%% Finding Max depth
@@ -174,7 +141,7 @@ print('target_test size', target_test.shape)
 use_DT = False
 use_RF = True
 #essais = [2, 5, 15, 20]
-max_depths = [11]
+max_depths = [12]
 number_trees = [40]
 errors_tree = []
 times_tree = []
@@ -252,7 +219,8 @@ boost.fit(x_train, target_train)
 # make predictions for test data
 y = boost.predict(x_test)
 
-error_b = np.mean(abs(y - target_test))
+error_vect_b = abs(y - target_test)
+error_b = np.mean(error_vect_b)
 toc = time.time()
 t = toc - tic
 print('error boosting:', error_b)
@@ -262,13 +230,27 @@ print('time boosting:', t)
 
 error=[]
 for i in range(6):
-    mean_err = np.mean(error_vect_tree[:,i])
+    mean_err = np.mean(error_vect_b[:,i])
     error.append(mean_err)
 
 print(error)
 
+#%% Save models
 
-#%%  
+filename = 'models_statedic/M3_RandomForest_version8_1' 
+with open(filename, 'wb') as f:
+        pickle.dump(regr_rf, f)
+        f.close()
+        
+filename = 'models_statedic/M3_GradientBoosting_version8_1' 
+with open(filename, 'wb') as f:
+        pickle.dump(boost, f)
+        f.close()
+
+
+#%%  Graphs
+
+ 
 plt.figure()
 plt.plot(essais, errors_rf, marker='o')
 plt.title('Errors - 50 000 training samples - SNR 80-100')
@@ -371,30 +353,6 @@ plt.show()
 # plt.show()
 
 
-#%% 
-a = [1, 2, 3, 4]
-b = [2, 4, 6, 8]
-c = [4, 6, 8, 10]
-plt.figure()
-plt.plot(a, b, c)
-plt.xlabel('max depth')
-plt.ylabel('Time')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
-
-#%% Save models
-
-# filename = 'M3_RandomForest_2' 
-# with open(filename, 'wb') as f:
-#         pickle.dump(regr_rf, f)
-#         f.close()
-        
-# filename = 'M3_GradientBoosting_2' 
-# with open(filename, 'wb') as f:
-#         pickle.dump(boost, f)
-#         f.close()
         
 
     

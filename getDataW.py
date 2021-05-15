@@ -45,12 +45,21 @@ num_var = len(target_names)
 assert unit_variance != sum_to_one, ("Choose one of two normalization "
                                      "strategies: either unit sum or unit "
                                      "variance.")
+
 # Precomputed 1st-stage data
+# if SNR_dist == 'uniform':
+#     nnls_output = util.loadmat(os.path.join('synthetic_data',
+#                                             "training_data_"
+#                                             "1000000_samples_safe.mat"))
+#     validation_data = nnls_output
+
+#Test    
 if SNR_dist == 'uniform':
     nnls_output = util.loadmat(os.path.join('synthetic_data',
-                                            "training_data_"
-                                            "1000000_samples_safe.mat"))
+                                            "training_datauniform_600000_samples_lou_version8"))
     validation_data = nnls_output
+    
+
 elif SNR_dist == 'triangular':
     nnls_output = util.loadmat(os.path.join('synthetic_data',
                                             "training_data_triangSNR_"
