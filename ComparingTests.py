@@ -323,7 +323,7 @@ plt.savefig("graphs/Comp_Nus_test1.pdf", dpi=150)
 #%% Graphe prop vs SNR
 
 colors = ['indianred', 'steelblue', 'limegreen', 'darkgreen']
-fig3, ax3 = plt.subplots(nrows=3, ncols=3, figsize=(15, 15))
+fig3, ax3 = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
 fig3.suptitle('Error of each property dependent on nu for different noise levels')
 prop =['nu', 'rad', 'fin']
 for i in range(3):
@@ -335,14 +335,14 @@ for i in range(3):
         ax3[j,i].plot(nu_min, (prop_error_b[i,:,j]+prop_error_b[i,:,j+3])/2, color= colors[3], marker='x')
         
         if i==0:
-            ax3[j,i].set_ylabel('Mean absolute error \n %s' % (prop[j]))
+            ax3[j,i].set_ylabel('Mean absolute error \n \n %s' % (prop[j]))
         if j==0:
             ax3[j,i].set_title('SNR %s - 100' % (SNR[i]))
         if j==2:
             ax3[j,i].set_xlabel('nu1')
             
         ax3[j,i].yaxis.grid(True)
-        ax3[j,i].set_ylim(0, 0.75)
+        ax3[j,i].set_ylim(0, 0.85)
     
 fig3.legend(labels)
 plt.savefig("graphs/Comp_propSNR_test1.pdf", dpi=150) 
@@ -350,8 +350,8 @@ plt.savefig("graphs/Comp_propSNR_test1.pdf", dpi=150)
 #%% Graphe boxplot 
 
 #colors = ['indianred', 'steelblue', 'limegreen', 'darkgreen']
-colors = ['salmon', 'steelblue', 'lightgreen', 'green']
-fig4, ax4 = plt.subplots(nrows=3, ncols=3, figsize=(15, 15))
+colors = ['salmon', 'skyblue', 'lightgreen', 'green']
+fig4, ax4 = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
 fig4.suptitle('Error of each property dependent on nu for different noise levels')
 prop =['nu', 'rad', 'fin']
 for i in range(3): # i = SNR

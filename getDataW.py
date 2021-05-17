@@ -55,8 +55,8 @@ assert unit_variance != sum_to_one, ("Choose one of two normalization "
 
 #Test    
 if SNR_dist == 'uniform':
-    nnls_output = util.loadmat(os.path.join('synthetic_data',
-                                            "training_datauniform_600000_samples_lou_version8"))
+    nnls_output = util.loadmat(os.path.join('data_TEST1',
+                                            "training_datauniform_15000_samples_lou_TEST1"))
     validation_data = nnls_output
     
 

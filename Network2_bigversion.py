@@ -528,6 +528,27 @@ for i in range(6):
 
 print("mean_abs_err", mean_err_scaled)
 
+
+#%% 95% interval
+
+output = scaler2.inverse_transform(output)
+target_scaled = scaler2.inverse_transform(target_test)
+
+error = output - target_scaled
+conf_int = np.zeros(num_params)
+
+for j in range(num_params):
+    data = error[:,j]
+    
+    mean = np.mean(data)
+    sigma = np.std(data)
+    
+    confint = stats.norm.interval(0.95, loc=mean, scale=sigma)
+    
+    print(confint)
+    print((-confint[0]+confint[1])/2)
+    
+    
 #%%
 
 print("---- Prediction with files -----")
@@ -606,23 +627,6 @@ print("mean_abs_err", mean_err_scaled)
 # plt.ylabel('Probability')
 # plt.xlabel('Data')
 # plt.show()
-
-#%% obtenir 95% interval
-
-conf_int = np.zeros(num_params)
-
-for j in range(num_params):
-    #plt.plot(error[:,j])
-    #plt.show()
-    data = error[:,j]
-    
-    mean = np.mean(data)
-    sigma = np.std(data)
-    
-    confint = stats.norm.interval(0.95, loc=mean, 
-        scale=sigma)
-    
-    print(confint)
 
 
 #%%Testing Optimisation: for this the params dictionnary needs to be changed (at the beginning of the code)
