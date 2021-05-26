@@ -64,7 +64,7 @@ use_prerot = False  # use pre-rotated dictionaries
 sparse = True  # store data sparsely to save space
 save_res = False  # save mat file containing data
 SNR_dist = 'uniform'  # 'uniform' or 'triangular'
-num_samples = 600000
+num_samples = 1000
 save_dir = 'synthetic_data'  # destination folder
 
 # Initiate random number generator (to make results reproducible)
@@ -147,6 +147,8 @@ if RAM_dense > 1e9 and not sparse:
 
 starttime = time.time()
 time_rot_hist = np.zeros(num_samples)
+time_nnls_hist = np.zeros(num_samples)
+time_est_o = np.zeros(num_samples)
 
 # Prepare memory
 IDs = np.zeros((num_samples, num_fasc), dtype=np.int32)
@@ -297,6 +299,7 @@ for i in range(num_samples):
 
     DW_noisy_store[:, i] = DW_image_noisy
 
+    start_est_o = time.time()
     # Estimate peak directions from noisy signal
     peaks = get_csd_peaks(DW_image_noisy, sch_mat_b0, num_fasc)
 
@@ -343,6 +346,8 @@ for i in range(num_samples):
 #          (i+1, num_samples, SNR, nu1, crossang,
 #           num_pk_detected, mean_ang_err, crossang_est))
 
+    time_est_o[i]= time.time()- start_est_o
+
     # Create big dictionary. Rotate dic_sing_fasc along estimated
     # cyldir_1 and cyldir_2.
     # !! In theory we should use peaks[0] and peaks[1] directly from the peak
@@ -364,12 +369,16 @@ for i in range(num_samples):
                                                  WM_DIFF, S0_fasc)
     time_rot_hist[i] = time.time() - start_rot
 
+
     # Solve NNLS
+    start_nnls = time.time()
     norm_DW = np.max(DW_image_noisy[sch_mat_b0[:, 3] == 0])
     (w_nnls,
      PP,
      _) = util.nnls_underdetermined(dictionary,
                                     DW_image_noisy/norm_DW)
+                                    
+    time_nnls_hist[i] = time.time() - start_nnls
 
     # Store
     IDs[i, :] = np.array([ID_1, ID_2])
@@ -410,6 +419,9 @@ if sparse:
 time_elapsed = time.time() - starttime
 print('%d samples created in %g sec.' % (num_samples, time_elapsed))
 
+print('Time estimation of orientation', print(sum(time_est_o)))
+print('Time rotation of dictionary', print(sum(time_rot_hist)))
+print('Time nnls', print(sum(time_nnls_hist)))
 
 #print('DW_image_store', DW_image_store)
 
@@ -419,7 +431,7 @@ print('%d samples created in %g sec.' % (num_samples, time_elapsed))
 # plus d'actualité: Note! The DW-MRI signal is not stored! just the output of NNLS
 # --> ca j'ai changé :-)
 # en fait non, seulement ajouter pour < 500 000, si c est + matlab ne veut pas
-save_res=True
+
 print('--- save dico ----', save_res)
 
 mdict = {'rand_seed': rand_seed,
@@ -526,12 +538,8 @@ Detect missed fascicles by orientation estimation procedure:
 
 #%% Enregistrer DW_image dans pickle files
 
-import pickle
 
-save_dir = 'synthetic_data' 
-SNR_str = 'uniform'
-num_samples = 600000
-filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_version8" %
+filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_version8_24_5" %
                           (SNR_str, num_samples))
 # filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_version8" %
 #                           (SNR_str, num_samples))

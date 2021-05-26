@@ -58,7 +58,6 @@ else:
     y_data = pickle.load(open(filename, 'rb'))
     print('ok no noise')
 
-print(y_data[:5, :5])
 
 #%%
 M, num_sample = y_data.shape #M=552
@@ -170,10 +169,12 @@ params1 = {
      #hp.choice(hsjdkfhs, )
 }
 
-filename = 'params/M1_params_16' 
-with open(filename, 'wb') as f:
-          pickle.dump(params1, f)
-          f.close()
+save_params = False
+if save_params:
+    filename = 'params/M1_params_16' 
+    with open(filename, 'wb') as f:
+              pickle.dump(params1, f)
+              f.close()
 
 # %% Building the network
 
@@ -539,6 +540,186 @@ for j in range(num_params):
     
     print(confint)
     print((-confint[0]+confint[1])/2)
+
+
+#%% ##### HYPEROPTI ######
+# ! recompiler le dictionnaire des params à chaque fois!
+
+# Opti dropout
+
+dropout = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+n = len(dropout)
+
+error_d = np.zeros((2, n))
+for i in range(n):
+    params1['dropout'] = dropout[i]
+    tic = time.time()
+    trial = train_network1(params1)
+    #net_tot = trial['model']
+    toc = time.time()
+    train_time = toc - tic
+    print("training time: ", train_time)
+    
+    error_d[0, i] = trial['meanValError'][-1]
+    error_d[1, i] = trial['meanTrainError'][-1]
+    
+    print("Okayy -- ", error_d[0,i], error_d[1,i])
+
+print("Dropout fini :-)", error_d)
+params1['dropout'] = 0.05
+
+# Opti learning rate
+
+lr = [0.0005, 0.0015, 0.0025, 0.005, 0.01]
+n = len(lr)
+
+error_lr = np.zeros((2, n))
+for i in range(n):
+    params1['learning_rate'] = lr[i]
+    tic = time.time()
+    trial = train_network1(params1)
+    #net_tot = trial['model']
+    toc = time.time()
+    train_time = toc - tic
+    print("training time: ", train_time)
+    
+    error_lr[0, i] = trial['meanValError'][-1]
+    error_lr[1, i] = trial['meanTrainError'][-1]
+    
+    print("Okayy -- ", error_lr[0,i], error_lr[1,i])
+
+print("lr fini :-)", error_lr)
+params1['learning_rate'] = 0.001
+
+# Opti batch
+
+batch = [500, 1000, 2000, 5000, 10000]
+n = len(batch)
+
+error_batch = np.zeros((2, n))
+for i in range(n):
+    params1['batch_size'] = batch[i]
+    tic = time.time()
+    trial = train_network1(params1)
+    #net_tot = trial['model']
+    toc = time.time()
+    train_time = toc - tic
+    print("training time: ", train_time)
+    
+    error_batch[0, i] = trial['meanValError'][-1]
+    error_batch[1, i] = trial['meanTrainError'][-1]
+    
+    print("Okayy -- ", error_batch[0,i], error_batch[1,i])
+
+print("batch fini :-)", error_batch)
+
+#%% Graph hyperopti
+
+dropout = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+error_d = [[0.25276598, 0.23289584, 0.24382359, 0.25945747, 0.27979863,
+            0.29240685, 0.3159288 ], 
+           [0.24918965, 0.22611906, 0.23765829, 0.25470437, 0.27532474,
+            0.28896069, 0.31268541]]
+
+lr = [0.0005, 0.0015, 0.0025, 0.005, 0.01]
+error_lr = [[0.23081154, 0.2456418, 0.26853353, 0.29361466, 0.34443733],
+            [0.22382329, 0.24167567, 0.26616887, 0.29221101, 0.34400937]]
+
+batch = [500, 1000, 2000, 5000, 10000]
+error_batch = [[0.22405809, 0.23451039, 0.24321139, 0.26486551, 0.2908088],
+               [0.21384077, 0.22466987, 0.2351169,  0.26025251, 0.28850835]]
+
+titles = ['dropout', 'learning rate', 'batch size', 'num out']
+
+fig1, ax1 = plt.subplots(nrows=1, ncols=3, figsize=(15, 4))
+fig1.suptitle('Hyperparameters optimization \n .')
+
+color = ['b', 'r']
+labels = ['Validation', 'Training']
+
+for i in range(2):
+    ax1[0].plot(dropout, error_d[i], color=color[i], marker='x')    
+    ax1[1].plot(lr, error_lr[i], color=color[i], marker='x')
+    ax1[2].plot(batch, error_batch[i], color=color[i], marker='x')     
+    
+    if i==0:
+        ax1[i].set_ylabel('Mean absolute error')
+
+for j in range(3):
+    ax1[j].set_xlabel(titles[j])
+    ax1[j].set_title('Optimization of %s' %titles[j])
+    ax1[j].yaxis.grid(True)
+    ax1[j].set_ylim(0, 0.4)
+    
+fig1.legend(labels)
+plt.savefig("graphs/NN1_hyperopti.pdf", dpi=150) 
+
+#%% Influence number samples
+
+ns = [1000, 5000, 10000, 50000, 100000, 200000, 400000]
+n = len(ns)
+error_ns = np.zeros((2,n))
+x_train_old = x_train
+target_train_old = target_train
+
+# valid
+x_valid_old = x_valid
+target_valid_old = target_valid
+# fin
+
+for i in range(n):
+    num_train = ns[i]
+    x_train = x_train_old[0:num_train, :]
+    target_train = target_train_old[0:num_train, :]
+    
+    #valid (checker si pas de difference)
+    num_div = ns[i]
+    x_valid = x_valid_old[0:num_div, :]
+    target_valid = target_valid_old[0:num_div, :]   
+    # fin
+
+    params1['batch_size'] = int(num_train/100)
+    tic = time.time()
+    trial = train_network1(params1)
+    #net_tot = trial['model']
+    toc = time.time()
+    train_time = toc - tic
+    print("training time: ", train_time)
+    
+    error_ns[0, i] = trial['meanValError'][-1]
+    error_ns[1, i] = trial['meanTrainError'][-1]
+    
+    print("Okayy -- ", error_ns[0,i], error_ns[1,i])
+    
+ 
+#%% Graph
+
+title = 'Influence of number of samples on learning'
+ns = [1000, 5000, 10000, 50000, 100000, 200000, 400000]
+
+error_ns = [[0.47650279, 0.39815512, 0.38194787, 0.28233113, 0.26564592,
+             0.23772518, 0.23162131],
+            [0.3807254,  0.34776414, 0.34402051, 0.25508525, 0.24806336,
+             0.22598165, 0.22474477]]
+fig1, ax1 = plt.subplots(nrows=1, ncols=1, figsize=(7, 5))
+#fig1.suptitle('Hyperparameters optimization \n .')
+
+color = ['b', 'r']
+labels = ['Validation', 'Training']
+
+for i in range(2):
+    ax1.plot(ns, error_ns[i], color=color[i], marker='x')    
+
+ax1.set_ylabel('Mean absolute error')
+ax1.set_xlabel('number of training samples')
+ax1.set_title(title)
+ax1.yaxis.grid(True)
+ax1.set_ylim(0, 0.5)
+    
+fig1.legend(labels)
+plt.savefig("graphs/NN1_numsamples.pdf", dpi=150) 
+
+
 
 # %%Testing Optimisation
 

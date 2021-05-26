@@ -18,27 +18,45 @@ import time
 from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 
-num_sample = 15000
+n_test = '26_5' #date pour les enregistrements
+num_sample = 15000 # taille du test set
+n_sa = 1000
+SNR = [10, 30, 50]
+nu_min = [0.5, 0.4, 0.3, 0.2, 0.1]
+
 num_params = 6
 num_fasc = 2
 M0 = 500
 num_atoms = 782
 
+n_SNR = len(SNR)
+n_nu = len(nu_min)
+
 #%% Load Dw_image data
 
 use_noise = True
+use_NoNoise = True
 print("Noise", use_noise)
 
 if use_noise:
     filename = 'data_TEST1/DW_noisy_store_uniform_15000__lou_TEST1'
     y_data = pickle.load(open(filename, 'rb'))
     y_data = y_data/M0
+    # small changes for nn
+    y_data = np.transpose(y_data)
+    y_data_n = torch.from_numpy(y_data)
+    y_data_n = y_data_n.float()   
     print('ok noise')
-else:
+    
+if use_NoNoise:   
     filename = 'data_TEST1/DW_image_store_uniform_15000__lou_TEST1'
-    y_data = pickle.load(open(filename, 'rb'))
+    y_data2 = pickle.load(open(filename, 'rb'))    
+    # small changes for nn
+    y_data2 = np.transpose(y_data2)
+    y_data2_n = torch.from_numpy(y_data2)
+    y_data2_n = y_data2_n.float()
     print('ok no noise')
-
+    
 target_data = util.loadmat(os.path.join('data_TEST1',
                                             "training_datauniform_15000_samples_lou_TEST1"))
 
@@ -58,11 +76,8 @@ scaler_y = StandardScaler()
 target_params_y = scaler_y.fit_transform(target_params_y.T)
 target_params_y = target_params_y.T
 
-# small changes for nn
-y_data = np.transpose(y_data)
-y_data_n = torch.from_numpy(y_data)
-y_data_n = y_data_n.float()
-#y_data_n = torch.transpose(y_data_n, 0, 1) 
+baseline = np.mean(abs(target_params_y), 0)
+mean_baseline_prop = np.mean(abs(target_params_y), 1)
 
 #%% Load NNLS data
 
@@ -94,7 +109,7 @@ if via_pickle:
 
 scaler_w = StandardScaler()
 target_params_w = scaler_w.fit_transform(target_params_w)
-target_params_w = torch.from_numpy(target_params_w)    
+#target_params_w = torch.from_numpy(target_params_w)    
 
 #%% Load models
 
@@ -130,150 +145,147 @@ net2.eval()
 
 ##-----Trees-----
 
-# from sklearn.ensemble import RandomForestRegressor
-# from xgboost import XGBRegressor
-# from sklearn.multioutput import MultiOutputRegressor
-
-# model_rf = MultiOutputRegressor(RandomForestRegressor(n_estimators=40, max_depth=12, random_state=0))
-# model_b = MultiOutputRegressor(XGBRegressor())
-
 filename_rf = "models_statedic/M3_RandomForest_version8_1"
 model_rf = pickle.load(open(filename_rf, 'rb'))
 
 filename_b = "models_statedic/M3_GradientBoosting_version8_1"
+#filename_b = "models_statedic/M3_GradientBoosting_version8_200000tsamples"
 model_b = pickle.load(open(filename_b, 'rb'))
+
+compare_NoNoise_Trees = True
+
+if compare_NoNoise_Trees:
+    filename_rf_NoNoise = "models_statedic/M3_RandomForest_version8_1NoNoise"
+    model_rf_NoNoise = pickle.load(open(filename_rf_NoNoise, 'rb'))
+
+    filename_b_NoNoise = "models_statedic/M3_GradientBoosting_version8_1NoNoise"
+    model_b_NoNoise = pickle.load(open(filename_b_NoNoise, 'rb'))
+    
+    
+#%% Load exhaustive search error
+
+filename0 = "error_M1_testdata"
+error0 = pickle.load(open(filename0, 'rb'))
     
 #%% predictions
 
 ##-----NN-1-----
 
-tic = time.time()
-output1 = net1(y_data_n)
-output1 = output1.detach().numpy()
-toc = time.time()
-predic_time1 = toc - tic
-
-error1 = abs(output1 - target_params_y.T) #(15000, 6)
-sample_error1 = np.mean(error1, 0)
-error1_vec = np.mean(error1, 1)
-
-print("-- NN1 -- \n", 
-      "Mean error: ", np.mean(sample_error1), '\n'
-      "Error prop: ", sample_error1, '\n',
-      "prediction time: ", predic_time1, '\n')
+def compute_error_NN1(y_data):
+    tic = time.time()
+    output1 = net1(y_data_n)
+    output1 = output1.detach().numpy()
+    toc = time.time()
+    predic_time1 = toc - tic
+    
+    error1 = abs(output1 - target_params_y.T) #(15000, 6)
+    sample_error1 = np.mean(error1, 0)
+    error1_vec = np.mean(error1, 1)
+    
+    print("-- NN1 -- \n", 
+          "Mean error: ", np.mean(sample_error1), '\n'
+          "Error prop: ", sample_error1, '\n',
+          "prediction time: ", predic_time1, '\n')
+    
+    return error1, error1_vec
 
 ##-----NN-2-----
 
-tic = time.time()
-
-w_test = np.zeros((num_sample, num_atoms, num_fasc))
-w_test[:, :, 0] = w_store[:,0:num_atoms]
-w_test[:, :, 1] = w_store[:,num_atoms:2*num_atoms]
-w_test = torch.from_numpy(w_test).float()
-print(w_test.shape)
+def compute_error_NN2(w_store):
+    tic = time.time()
     
-output2 = net2(w_test[:,:,0], w_test[:,:,1])
-output2 = output2.detach().numpy()
-
-toc = time.time()
-predic_time2 = toc - tic
-
-target_params_w = target_params_w.detach().numpy()
-error2 = abs(output2 - target_params_w) #(15000, 6)
-sample_error2 = np.mean(error2, 0)
-error2_vec = np.mean(error2, 1)
-
-print("-- NN2 -- \n", 
-      "Mean error: ", np.mean(sample_error2), '\n'
-      "Error prop: ", sample_error2, '\n',
-      "prediction time: ", predic_time2, '\n')
-
-#%%-----Trees-----
-
-## RF
-tic = time.time()
-output_rf = model_rf.predict(y_data) # y_data:(552, 15000)
-toc = time.time()
-predic_time_rf = toc - tic
-
-error_rf = abs(output_rf - target_params_y.T) #(15000, 6)
-sample_error_rf = np.mean(error_rf, 0)
-error_rf_vec = np.mean(error_rf, 1)
-
-print("-- RF -- \n", 
-      "Mean error: ", np.mean(sample_error_rf), '\n'
-      "Error prop: ", sample_error_rf, '\n',
-      "prediction time: ", predic_time_rf, '\n')
-
-## Boost
-tic = time.time()
-output_b = model_b.predict(y_data)
-toc = time.time()
-predic_time_b = toc - tic
-
-error_b = abs(output_b - target_params_y.T) #(15000, 6)
-sample_error_b = np.mean(error_b, 0)        #(6,)
-error_b_vec = np.mean(error_b, 1)           #(15000,)
-
-print("-- Boosting -- \n", 
-      "Mean error: ", np.mean(sample_error_b), '\n'
-      "Error prop: ", sample_error_b, '\n',
-      "prediction time: ", predic_time_b, '\n')
-
-
-#%% Graphs
-SNR = [10, 30, 50]
-nu_min = [0.5, 0.4, 0.3, 0.2, 0.1]
-
-tab_error1 = np.zeros((3, 5, 1000))
-tab_error2 = np.zeros((3, 5, 1000))
-tab_error_rf = np.zeros((3, 5, 1000))
-tab_error_b = np.zeros((3, 5, 1000))
-for i in range(3):
-    for j in range(5):
-        elem = j*3 + i
-        tab_error1[i, j, :] = error1_vec[elem*1000:(elem+1)*1000]
-        tab_error2[i, j, :] = error2_vec[elem*1000:(elem+1)*1000]
-        tab_error_rf[i, j, :] = error_rf_vec[elem*1000:(elem+1)*1000]
-        tab_error_b[i, j, :] = error_b_vec[elem*1000:(elem+1)*1000]
-
-prop_error1 = np.zeros((3, 5, 6))
-prop_error2 = np.zeros((3, 5, 6))
-prop_error_rf = np.zeros((3, 5, 6))
-prop_error_b = np.zeros((3, 5, 6))
-for i in range(3):
-    for j in range(5):
-        elem = j*3 + i
-        prop_error1[i, j, :] = np.mean(error1[elem*1000:(elem+1)*1000, :], 0)
-        prop_error2[i, j, :] = np.mean(error2[elem*1000:(elem+1)*1000, :],0)
-        prop_error_rf[i, j, :] = np.mean(error_rf[elem*1000:(elem+1)*1000, :],0)
-        prop_error_b[i, j, :] = np.mean(error_b[elem*1000:(elem+1)*1000, :],0)
+    w_test = np.zeros((num_sample, num_atoms, num_fasc))
+    w_test[:, :, 0] = w_store[:,0:num_atoms]
+    w_test[:, :, 1] = w_store[:,num_atoms:2*num_atoms]
+    w_test = torch.from_numpy(w_test).float()
+    print(w_test.shape)
         
-prop_tot_error1 = np.zeros((3, 5, 1000, 6))
-prop_tot_error2 = np.zeros((3, 5, 1000, 6))
-prop_tot_error_rf = np.zeros((3, 5, 1000, 6))
-prop_tot_error_b = np.zeros((3, 5, 1000, 6))
-for i in range(3):
-    for j in range(5):
-        elem = j*3 + i
-        prop_tot_error1[i, j, :, :] = error1[elem*1000:(elem+1)*1000, :]
-        prop_tot_error2[i, j, :, :] = error2[elem*1000:(elem+1)*1000, :]
-        prop_tot_error_rf[i, j, :, :] = error_rf[elem*1000:(elem+1)*1000, :]
-        prop_tot_error_b[i, j, :, :] = error_b[elem*1000:(elem+1)*1000, :]
+    output2 = net2(w_test[:,:,0], w_test[:,:,1])
+    output2 = output2.detach().numpy()
+    
+    toc = time.time()
+    predic_time2 = toc - tic
+    
+    #target_params_w = target_params_w.detach().numpy()
+    error2 = abs(output2 - target_params_w) #(15000, 6)
+    sample_error2 = np.mean(error2, 0)
+    error2_vec = np.mean(error2, 1)
+    
+    print("-- NN2 -- \n", 
+          "Mean error: ", np.mean(sample_error2), '\n'
+          "Error prop: ", sample_error2, '\n',
+          "prediction time: ", predic_time2, '\n')
+    
+    return error2, error2_vec
+
+#-----Trees-----
+
+def compute_error_T(y_data, model, method=' '):
+    
+    tic = time.time()
+    output = model.predict(y_data) # y_data:(552, 15000)
+    toc = time.time()
+    predic_time = toc - tic
+    
+    error = abs(output - target_params_y.T) #(15000, 6)
+    sample_error = np.mean(error, 0)
+    error_vec = np.mean(error, 1)
+    
+    print("-- %s -- \n" %method, 
+          "Mean error: ", np.mean(sample_error), '\n'
+          "Error prop: ", sample_error, '\n',
+          "prediction time: ", predic_time, '\n')
+    
+    return error, error_vec    
+
+#%% Arrays for comparing 4 methods
+
+def reshape(error, error_vec):
+    tab_error = np.zeros((n_SNR, n_nu, n_sa))
+    prop_error = np.zeros((n_SNR, n_nu, 6))
+    prop_tot_error = np.zeros((n_SNR, n_nu, n_sa, 6))
+    
+    for i in range(n_SNR):
+        for j in range(n_nu):
+            elem = j*3 + i
+            tab_error[i, j, :] = error_vec[elem*n_sa:(elem+1)*n_sa]
+            prop_error[i, j, :] = np.mean(error[elem*n_sa:(elem+1)*n_sa, :], 0)
+            prop_tot_error[i, j, :, :] = error[elem*n_sa:(elem+1)*n_sa, :]
+            
+    return tab_error, prop_error, prop_tot_error
+
+
+error1, error1_vec = compute_error_NN1(y_data)
+error2, error2_vec = compute_error_NN2(w_store)
+error_rf, error_rf_vec = compute_error_T(y_data, model_rf, 'RF')    
+error_b, error_b_vec = compute_error_T(y_data, model_b, 'Boosting')  
+
+tab_error0, prop_error0, prop_tot_error0 = reshape(error0.T, np.mean(error0, 0))
+tab_error1, prop_error1, prop_tot_error1 = reshape(error1, error1_vec)
+tab_error2, prop_error2, prop_tot_error2 = reshape(error2, error2_vec)
+tab_error_rf, prop_error_rf, prop_tot_error_rf = reshape(error_rf, error_rf_vec)
+tab_error_b, prop_error_b, prop_tot_error_b = reshape(error_b, error_b_vec)
+
+if compare_NoNoise_Trees:
+    error_rf_NoNoise, error_rf_vec_NoNoise = compute_error_T(y_data, model_rf_NoNoise, 'RF, _NoNoise')    
+    error_b_NoNoise, error_b_vec_NoNoise = compute_error_T(y_data, model_b_NoNoise, 'Boosting, _NoNoise')  
+    
+    tab_error_rf_NoNoise, prop_error_rf_NoNoise, prop_tot_error_rf_NoNoise = reshape(error_rf_NoNoise, error_rf_vec_NoNoise)
+    tab_error_b_NoNoise, prop_error_b_NoNoise, prop_tot_error_b_NoNoise = reshape(error_b_NoNoise, error_b_vec_NoNoise)
 
 #%% graphe SNR
 
 #colors = ['pink', 'lightblue', 'lightgreen', 'darkgreen']
-colors = ['indianred', 'steelblue', 'lightgreen', 'green']
-labels = ['NN1', 'NN2', 'RF', 'Boosting']
+colors = ['black', 'indianred', 'steelblue', 'goldenrod']
+labels = ['ES', 'NN1', 'NN2', 'Boosting']
 
 fig1, ax1 = plt.subplots(nrows=1, ncols=3, figsize=(15, 4))
 fig1.suptitle('Error for different noise levels')
 
 for i in range(3):
-    bplot = ax1[i].boxplot([ np.matrix.flatten(tab_error1[i, :, :]), 
-                           np.matrix.flatten(tab_error2[i, :, :]), 
-                           np.matrix.flatten(tab_error_rf[i, :, :]),
+    bplot = ax1[i].boxplot([ np.matrix.flatten(tab_error0[i, :, :]),
+                            np.matrix.flatten(tab_error1[i, :, :]), 
+                           np.matrix.flatten(tab_error2[i, :, :]),
                            np.matrix.flatten(tab_error_b[i, :, :])],
                            vert=True,  # vertical box alignment
                            widths = 0.3,
@@ -290,10 +302,9 @@ for i in range(3):
     ax1[i].set_ylabel('Mean absolute error')
     ax1[i].set_ylim(0, 1.3)
     
-plt.savefig("graphs/Comp_SNR_test1.pdf", dpi=150) 
+plt.savefig("graphs/Comp_SNR_test%s.pdf" %n_test, dpi=150) 
 
 #%% graphe nus
-
 colors = ['indianred', 'steelblue', 'limegreen', 'darkgreen']
 fig2, ax2 = plt.subplots(nrows=1, ncols=3, figsize=(15, 4))
 fig2.suptitle('Error dependent on nu for different noise levels')
@@ -318,20 +329,21 @@ for i in range(3):
     ax2[i].set_ylim(0, 0.75)
     
 fig2.legend(labels)
-plt.savefig("graphs/Comp_Nus_test1.pdf", dpi=150) 
+plt.savefig("graphs/Comp_Nus_test%s.pdf" %n_test, dpi=150) 
 
 #%% Graphe prop vs SNR
 
-colors = ['indianred', 'steelblue', 'limegreen', 'darkgreen']
+colors = ['black', 'indianred', 'steelblue', 'goldenrod']
 fig3, ax3 = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
 fig3.suptitle('Error of each property dependent on nu for different noise levels')
 prop =['nu', 'rad', 'fin']
 for i in range(3):
     for j in range(3):
-    
-        ax3[j,i].plot(nu_min, (prop_error1[i,:,j]+prop_error1[i,:,j+3])/2, color= colors[0], marker='x')
-        ax3[j,i].plot(nu_min, (prop_error2[i,:,j]+prop_error2[i,:,j+3])/2, color= colors[1], marker='x')
-        ax3[j,i].plot(nu_min, (prop_error_rf[i,:,j]+prop_error_rf[i,:,j+3])/2, color= colors[2], marker='x')
+        
+        ax3[j,i].plot(nu_min, (prop_error0[i,:,j]+prop_error0[i,:,j+3])/2, color= colors[0], marker='x')
+        ax3[j,i].plot(nu_min, (prop_error1[i,:,j]+prop_error1[i,:,j+3])/2, color= colors[1], marker='x')
+        ax3[j,i].plot(nu_min, (prop_error2[i,:,j]+prop_error2[i,:,j+3])/2, color= colors[2], marker='x')
+        #ax3[j,i].plot(nu_min, (prop_error_rf[i,:,j]+prop_error_rf[i,:,j+3])/2, color= colors[2], marker='x')
         ax3[j,i].plot(nu_min, (prop_error_b[i,:,j]+prop_error_b[i,:,j+3])/2, color= colors[3], marker='x')
         
         if i==0:
@@ -342,31 +354,32 @@ for i in range(3):
             ax3[j,i].set_xlabel('nu1')
             
         ax3[j,i].yaxis.grid(True)
-        ax3[j,i].set_ylim(0, 0.85)
+        ax3[j,i].set_ylim(0, 1)
     
 fig3.legend(labels)
-plt.savefig("graphs/Comp_propSNR_test1.pdf", dpi=150) 
+plt.savefig("graphs/Comp_MAEprop_test%s.pdf" %n_test, dpi=150) 
 
 #%% Graphe boxplot 
 
 #colors = ['indianred', 'steelblue', 'limegreen', 'darkgreen']
-colors = ['salmon', 'skyblue', 'lightgreen', 'green']
+colors = ['black', 'salmon', 'skyblue', 'goldenrod']
 fig4, ax4 = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
 fig4.suptitle('Error of each property dependent on nu for different noise levels')
 prop =['nu', 'rad', 'fin']
 for i in range(3): # i = SNR
     for l in range(3): # l = prop
     
-        bplot = ax4[l,i].boxplot([ np.matrix.flatten((prop_tot_error1[i, :, :, l] + prop_tot_error1[i, :, :, l+3])/2), 
-                           np.matrix.flatten((prop_tot_error2[i, :, :, l] + prop_tot_error2[i, :, :, l+3])/2), 
-                           np.matrix.flatten((prop_tot_error_rf[i, :, :, l] + prop_tot_error_rf[i, :, :, l+3])/2),
-                           np.matrix.flatten((prop_tot_error_b[i, :, :, l] + prop_tot_error_b[i, :, :, l+3])/2) ],
-                           notch = True,
-                           sym = "",
-                           vert=True,  # vertical box alignment
-                           widths = 0.25,
-                           patch_artist=True,  # fill with color
-                           labels=labels)  # will be used to label x-ticks
+        bplot = ax4[l,i].boxplot([ np.matrix.flatten((prop_tot_error0[i, :, :, l] + prop_tot_error0[i, :, :, l+3])/2),
+                                 np.matrix.flatten((prop_tot_error1[i, :, :, l] + prop_tot_error1[i, :, :, l+3])/2), 
+                                 np.matrix.flatten((prop_tot_error2[i, :, :, l] + prop_tot_error2[i, :, :, l+3])/2), 
+                                 #np.matrix.flatten((prop_tot_error_rf[i, :, :, l] + prop_tot_error_rf[i, :, :, l+3])/2),
+                                 np.matrix.flatten((prop_tot_error_b[i, :, :, l] + prop_tot_error_b[i, :, :, l+3])/2) ],
+                                 notch = True,
+                                 sym = "",
+                                 vert=True,  # vertical box alignment
+                                 widths = 0.25,
+                                 patch_artist=True,  # fill with color
+                                 labels=labels)  # will be used to label x-ticks
     
         for j in range(4): # number of methods
             patch = bplot['boxes'][j]
@@ -383,4 +396,71 @@ for i in range(3): # i = SNR
             
         ax4[l,i].yaxis.grid(True)
     
-plt.savefig("graphs/Comp_Boxplot_propSNR_test1.pdf", dpi=150) 
+plt.savefig("graphs/Comp_Boxplot_propSNR_test%s.pdf" %n_test, dpi=150) 
+
+#%% Graph for comparing training on noise vs no noise - boxplots
+
+# error without noise
+error_rf2, error_rf_vec2 = compute_error_T(y_data2, model_rf, 'RF')    
+error_b2, error_b_vec2 = compute_error_T(y_data2, model_b, 'Boosting')  
+
+error_rf2_NoNoise, error_rf_vec2_NoNoise = compute_error_T(y_data2, model_rf_NoNoise, 'RF _NoNoise')    
+error_b2_NoNoise, error_b_vec2_NoNoise = compute_error_T(y_data2, model_b_NoNoise, 'Boosting _NoNoise')
+
+SNR = [10, 30, 50]
+
+#%%
+
+fig5, ax5 = plt.subplots(nrows=1, ncols=3, figsize=(15, 5))
+colors = ['lightpink', 'lightgreen', 'lightpink', 'lightgreen']
+fig5.suptitle('Comparing mean error for traing on Noisy and Non Noisy data')
+labels = ['Trained on Noise (50-100)', 'Trained without noise']
+k=0 #graph
+
+for i in [3, 2, 0]: # i = SNR
+    
+    if i==3:
+        bplot = ax5[k].boxplot([ error_rf_vec2, error_rf_vec2_NoNoise,
+                                error_b_vec2, error_b_vec2_NoNoise],
+                           notch = True,
+                           sym = "",
+                           vert=True,  # vertical box alignment
+                           widths = 0.22,
+                           patch_artist=True,  # fill with color
+                           positions = [-0.3, 0.3, 1.7, 2.3],
+                           )  # will be used to label x-ticks
+        ax5[k].set_title('No noise')
+        ax5[k].set_ylabel('Boxplot of mean error' )
+        
+    else:
+        bplot = ax5[k].boxplot([ np.matrix.flatten(tab_error_rf[i, :, :]),
+                                np.matrix.flatten(tab_error_rf_NoNoise[i, :, :]), 
+                                np.matrix.flatten(tab_error_b[i, :, :]),
+                                np.matrix.flatten(tab_error_b_NoNoise[i, :, :]) ],
+                               notch = True,
+                               sym = "",
+                               vert=True,  # vertical box alignment
+                               widths = 0.22,
+                               patch_artist=True,  # fill with color
+                               positions = [-0.3, 0.3, 1.7, 2.3],
+                               )  # will be used to label x-ticks
+        ax5[k].set_title('SNR %s - 100' % (SNR[i]))
+
+    #ax5[k].set_xticks(ticks)
+    #ax5[k].set_xticklabels(lab)
+    for j in range(4): # number of boxes
+        patch = bplot['boxes'][j]
+        patch.set_facecolor(colors[j])
+
+    ax5[k].yaxis.grid(True)
+    ax5[k].set_ylim(0, 1.2)
+
+    k= k+1
+
+plt.setp(ax5, xticks=[0, 2], xticklabels=['RF', 'GBoost'])
+fig5.legend([bplot["boxes"][0], bplot["boxes"][1]], labels, loc='upper right')
+plt.savefig("graphs/M3_Boxplot_NoiseTraining_test%s.pdf" %n_test, dpi=150) 
+
+
+
+

@@ -62,7 +62,7 @@ import mf_utils as util
 # ---- Set input parameters here -----
 use_prerot = False  # use pre-rotated dictionaries
 sparse = True  # store data sparsely to save space
-save_res = False  # save mat file containing data
+save_res = True  # save mat file containing data
 SNR_dist = 'uniform'  # 'uniform' or 'triangular'
 num_samples = 15000
 save_dir = 'synthetic_data'  # destination folder
@@ -245,16 +245,19 @@ i = 0
 num_it = 1000
 nu_min_values = [0.5, 0.4, 0.3, 0.2, 0.1]
 SNR_min_values = [10, 30, 50]
+
 for nu_min in nu_min_values:
-    nu_max = 1-nu_min
+    #nu_max = 1-nu_min
     for SNR_ind in range(len(SNR_min_values)):
         SNR_min = SNR_min_values[SNR_ind]
         
 
         for j in range(num_it):
             
-            nu1 = nu_min + (nu_max - nu_min) * np.random.rand()
-            nu2 = 1 - nu1
+            nu1 = nu_min
+            nu2 = 1-nu_min
+            #nu1 = nu_min + (nu_max - nu_min) * np.random.rand()
+            #nu2 = 1 - nu1
             ID_1 = np.random.randint(0, num_atoms)
             ID_2 = np.random.randint(0, num_atoms)
             if SNR_dist == 'triangular':
@@ -474,7 +477,7 @@ if save_res:
         SNR_str = '_triangSNR'
     else:
         raise ValueError('Unknown SNR distribution %s' % SNR_dist)
-    fname = os.path.join(save_dir, "training_data%s_%d_samples_lou_TEST1" %
+    fname = os.path.join(save_dir, "training_data%s_%d_samples_lou_TEST2" %
                          (SNR_str, num_samples))
     scio.savemat(fname,
                  mdict,
@@ -538,9 +541,9 @@ import pickle
 # save_dir = 'synthetic_data' 
 # SNR_str = 'uniform'
 # num_samples = 600000
-filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_TEST1" %
+filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_TEST2" %
                           (SNR_str, num_samples))
-filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_TEST1" %
+filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_TEST2" %
                           (SNR_str, num_samples))
 
 with open(filename1, 'wb') as f:
