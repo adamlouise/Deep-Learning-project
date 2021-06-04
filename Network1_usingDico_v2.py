@@ -126,6 +126,14 @@ scaler1 = StandardScaler()
 target_params = scaler1.fit_transform(target_params.T)
 target_params = target_params.T
 
+save_scaler = False
+if save_scaler:
+    filename = "NN1_scaler1_version8"
+    with open(filename, 'wb') as f:
+              pickle.dump(scaler1, f)
+              f.close()
+
+
 #print(target_params[:5, :5])
 
 ## Dividing in train test and valid

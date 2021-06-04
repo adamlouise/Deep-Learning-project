@@ -51,18 +51,18 @@ use_NoNoise = True
 print("Noise", use_noise)
 
 if use_noise:
-    filename = 'data_TEST1/DW_noisy_store_uniform_15000__lou_TEST1'
+    filename = 'data_TEST2/DW_noisy_store_uniform_15000__lou_TEST2'
     y_data = pickle.load(open(filename, 'rb'))
     y_data = y_data/M0
     print('ok noise')
     
 if use_NoNoise:   
-    filename = 'data_TEST1/DW_image_store_uniform_15000__lou_TEST1'
+    filename = 'data_TEST2/DW_image_store_uniform_15000__lou_TEST2'
     y_data2 = pickle.load(open(filename, 'rb'))    
     print('ok no noise')
     
-target_data = util.loadmat(os.path.join('data_TEST1',
-                                            "training_datauniform_15000_samples_lou_TEST1"))
+target_data = util.loadmat(os.path.join('data_TEST2',
+                                            "training_datauniform_15000_samples_lou_TEST2"))
 
 IDs = target_data['IDs'][0:num_sample, :]
 nus = target_data['nus'][0:num_sample, :]
@@ -82,7 +82,7 @@ target_params_y = target_params_y.T
 
 baseline = np.mean(abs(target_params_y), 0)
 mean_baseline_prop = np.mean(abs(target_params_y), 1)
-        
+ 
         
 # %% Load DW-MRI protocol from Human Connectome Project (HCP)
 schemefile = os.path.join('real_data', 'hcp_mgh_1003.scheme1')
@@ -130,14 +130,11 @@ cyldir_2 = target_data['orientations'][:, 1, :]
 est_dir1 = target_data['est_orientations'][:, 0, :]
 est_dir2 = target_data['est_orientations'][:, 1, :]
 
-# error1 = np.mean(abs(cyldir_1 - est_dir1), 1)
-# error2 = np.mean(abs(cyldir_2 - est_dir2), 1)
-
-# plt.plot(range(num_sample), error1, range(num_sample), error2)
 
 #%% 2 ROTATION DU DICTIONNAIRE 
 #   et 
 #   3 DICTIONNARY SEARCH
+
 num_sample = 15000
 w_nneg_store = np.zeros((num_sample,2))
 ind_atoms_subdic_store = np.zeros((num_sample,2))
@@ -149,13 +146,12 @@ for i in range(num_sample):
             print("sample:", i)
     
     dictionary = np.zeros((num_mris, num_fasc * num_atoms), dtype=np.float64)
-    
     dictionary[:, :num_atoms] = dic_sing_fasc
-    
     dictionary[:, num_atoms:] = util.rotate_atom(dic_sing_fasc,
                                                  sch_mat_b0,
                                                  refdir,
-                                                 est_dir2[i,:],
+                                                 cyldir_2[i,:],
+                                                 #est_dir2[i,:],
                                                  WM_DIFF, S0_fasc)
     
     dicsizes = np.array([782, 782])
@@ -167,8 +163,9 @@ for i in range(num_sample):
     
 time_search = time.time() - start_search   
 
-#%%
-save_err = False
+#%% Calcul et enregistrement de l'erreur
+
+save_err = True
 
 est_params = np.zeros((6, num_sample))
 
@@ -192,7 +189,7 @@ mean_error = np.mean(error_prop)
 print(mean_error)
 
 if save_err:
-    filename = 'error_M1_testdata'
+    filename = 'error_M1_testdata_TEST2_TrueOrientations'
     with open(filename, 'wb') as f:
         pickle.dump(error, f)
         f.close()
@@ -232,10 +229,12 @@ err_dir2[~is_option1] = np.arccos(dp_option2_2[~is_option1]) * 180/np.pi
 dp_est = np.sum(est_orientations[:, 0, :]*est_orientations[:, 1, :], axis=-1)
 est_ang_sep = np.arccos(np.clip(np.abs(dp_est), 0, 1)) * 180/np.pi
 
-mean_ang_err = (err_dir1 + err_dir2)/2
+mean_ang_err = (abs(err_dir1) + abs(err_dir2))/2
 ang_err2 = np.zeros((2, num_sample))
 ang_err2[0, :] = err_dir1 
 ang_err2[1, :] = err_dir2 
+
+# Diviser les ang_err en fonction du bruit et de nu
 
 reshape_ang_err = np.zeros((3, 5, 1000))
 reshape_ang_err2 = np.zeros((2, 3, 5, 1000))
@@ -248,15 +247,32 @@ for i in range(3):
         
 
 #%% Histogram of angular error
-n_test = '26_5'
 
-plt.hist(mean_ang_err, bins=15)
+n_test = '26_5_TEST2'
+
+plt.hist(mean_ang_err, bins=15, color='steelblue', edgecolor='white')
 plt.title('Histogram of angular error for orientation estimation')
 plt.ylabel('Number of samples')
 plt.xlabel('Agular error')
 plt.grid(True, axis='y')
 
 plt.savefig("graphs/AngErr_test%s.pdf" %n_test, dpi=150) 
+
+#%% hist2D
+
+n_test = '26_5_TEST2'
+from matplotlib.colors import LogNorm
+
+ang_err = np.array([err_dir1, err_dir2])
+#bin_x = np.arange(0, 90, 1)
+#bin_y = np.arange(0, 90, 1)
+plt.hist2d(abs(err_dir1), abs(err_dir2), bins=6, alpha=0.8, cmin = 0.9, norm=LogNorm())
+plt.colorbar()
+plt.title('Histogram of angular error for orientation estimation')
+plt.ylabel('Number of samples')
+plt.xlabel('Agular error')
+
+plt.savefig("graphs/AngErr_Hist2d_test%s.pdf" %n_test, dpi=150) 
 
 #%% subplots
 

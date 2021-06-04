@@ -55,18 +55,10 @@ assert unit_variance != sum_to_one, ("Choose one of two normalization "
 
 #Test    
 if SNR_dist == 'uniform':
-    nnls_output = util.loadmat(os.path.join('data_TEST1',
-                                            "training_datauniform_15000_samples_lou_TEST1"))
+    nnls_output = util.loadmat(os.path.join('data_TEST2',
+                                            "training_datauniform_15000_samples_lou_TEST2"))
     validation_data = nnls_output
-    
 
-elif SNR_dist == 'triangular':
-    nnls_output = util.loadmat(os.path.join('synthetic_data',
-                                            "training_data_triangSNR_"
-                                            "1000000_samples_safe.mat"))
-    validation_data = util.loadmat(os.path.join('synthetic_data',
-                                                "training_data_"
-                                                "1000000_samples_safe.mat"))
 
 # Substrate (=fingerprint) properties
 sub_rads = nnls_output['subinfo']['rad']  # Python list

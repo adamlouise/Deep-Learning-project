@@ -47,9 +47,9 @@ via_pickle = True
 new_training = True
 
 # Saving
-save_params = False
-save_scaler = False
-save_net = False
+save_params = True
+save_scaler = True
+save_net = True
 save_res = False
 
 
@@ -92,7 +92,7 @@ if (num_samples != num_valid_samples):
     raise "Division of data in train, test, valid does not work"
 
 if save_params:
-    filename = 'params/M2_params_17' 
+    filename = 'params/M2_params_2_6' 
     with open(filename, 'wb') as f:
               pickle.dump(params, f)
               f.close()
@@ -161,6 +161,7 @@ x_test = x_test.float()
 x_valid = x_valid.float()
 
 
+
 # %% Target data
 
 print("--- Taking microstructural properties of fascicles ---")
@@ -187,7 +188,7 @@ print('target_test size', target_test.shape)
 print('target_valid size', target_valid.shape)
 
 if save_scaler:
-    filename = 'model2_scaler2' 
+    filename = 'NN2_scaler2_version8_2_6' 
     with open(filename, 'wb') as f:
               pickle.dump(scaler2, f)
               f.close()
@@ -433,11 +434,11 @@ print("training time: ", train_time)
 #%% Save 
 
 if save_net:
-    PATH = "models_statedic/M2_version8_StateDict.pt"
+    PATH = "models_statedic/M2_version8_StateDict_2_6.pt"
     torch.save(net_tot.state_dict(), PATH)
 
 if save_res:
-    filename = 'results/M2_trial_version8' 
+    filename = 'results/M2_trial_version8_2_6' 
     with open(filename, 'wb') as f:
               pickle.dump(trial, f)
               f.close()
@@ -481,7 +482,7 @@ for i in range(2):
         #axs[i,j].legend(['Train error','Validation error'])
 fig.legend(['Train error','Validation error'])     
 
-plt.savefig("graphs/NN2_LC_6properties.pdf", dpi=150)  
+#plt.savefig("graphs/NN2_LC_6properties.pdf", dpi=150)  
 
 ## - 2 - Graoh for learning curve of Mean Error
 
@@ -498,7 +499,7 @@ axs3.set_xlabel('Epochs'),
 axs3.set_ylabel('Mean Scaled Error')
 axs3.axis([0, len(epoch)-5, 0, 0.6])
 
-plt.savefig("graphs/NN2_LC_MeanError.pdf", dpi=150) 
+#plt.savefig("graphs/NN2_LC_MeanError.pdf", dpi=150) 
 
 ## - 3 - Graph for Learning curve of 3 properties (mean over fascicles)
 
@@ -518,7 +519,7 @@ for j in range(3):
 
 fig2.legend(['Train error','Validation error'])  
 
-plt.savefig("graphs/NN2_LC_3prop.pdf", dpi=150) 
+#plt.savefig("graphs/NN2_LC_3prop.pdf", dpi=150) 
 
 # %% Predictions (Testing)
 print('----------------------- Prediction --------------------------')
@@ -561,27 +562,53 @@ for j in range(num_params):
     
 #%%
 
-# print("---- Prediction with files -----")
+print("---- Prediction with files -----")
 
-# from Classes.Net2_Class import create_Net2
+## 1 ## Constructing net
 
-# params2 = pickle.load(open('model2_29_params2', 'rb'))
+from Classes.Net2_Class import create_Net2
 
-# net2 = create_Net2(params2) 
+params2 = pickle.load(open('params/M2_params_2_6', 'rb'))
+
+net2 = create_Net2(params2) 
     
-# PATH = "M2_version1_StateDict.pt"
-# net2.load_state_dict(torch.load(PATH))
-# net2.eval()
+PATH = "models_statedic/M2_version8_StateDict_2_6.pt"
+net2.load_state_dict(torch.load(PATH))
+net2.eval()
 
-# output = net2(x_test[:,:,0], x_test[:,:,1])
-# output = output.detach().numpy()
+## 2 ## Loading data
 
-# # mean absolute scaled error for 6 properties
-# mean_err_scaled = np.zeros(6)
-# for i in range(6):
-#     mean_err_scaled[i] = mean_absolute_error(output[:,i], target_test[:,i])
+filename1 = 'data_TEST2/dataNW2_w_store_TEST2'
+filename2 = 'data_TEST2/dataNW2_targets_TEST2' 
 
-# print("mean_abs_err", mean_err_scaled)
+print("on load via les fichiers pickle :-) ")     
+w_store = pickle.load(open(filename1, 'rb'))
+target_params_w = pickle.load(open(filename2, 'rb'))
+
+scaler_w = pickle.load(open('NN2_scaler2_version8_2_6', 'rb'))
+target_params_w = scaler_w.transform(target_params_w)
+
+## 3 ## Computing output
+
+w_test = np.zeros((15000, num_atoms, 2))
+w_test[:, :, 0] = w_store[:,0:num_atoms]
+w_test[:, :, 1] = w_store[:,num_atoms:2*num_atoms]
+w_test = torch.from_numpy(w_test).float()
+print(w_test.shape)
+    
+output2 = net2(w_test[:,:,0], w_test[:,:,1])
+output2 = output2.detach().numpy()
+
+
+## 4 ## mean absolute scaled error for 6 properties
+
+err = abs(output2 - target_params_w)
+
+mean_err_scaled = np.zeros(6)
+for i in range(6):
+    mean_err_scaled[i] = np.mean(err[:,i])
+
+print("mean_abs_err", mean_err_scaled)
 
 
 #%%Analysis
