@@ -50,14 +50,12 @@ from dipy.data import get_sphere
 from dipy.direction import peaks_from_model
 from dipy.reconst.csdeconv import ConstrainedSphericalDeconvModel
 
-
 # See check_synthetic_data.py for explanations of the lines below
 path_to_utils = os.path.join('python_functions')
 path_to_utils = os.path.abspath(path_to_utils)
 if path_to_utils not in sys.path:
     sys.path.insert(0, path_to_utils)
 import mf_utils as util
-
 
 # ---- Set input parameters here -----
 use_prerot = False  # use pre-rotated dictionaries
@@ -70,7 +68,6 @@ save_dir = 'synthetic_data'  # destination folder
 # Initiate random number generator (to make results reproducible)
 rand_seed = 141414
 np.random.seed(rand_seed)
-
 
 # %% Load DW-MRI protocol from Human Connectome Project (HCP)
 schemefile = os.path.join('real_data', 'hcp_mgh_1003.scheme1')
@@ -85,12 +82,6 @@ sch_mat_b0 = np.zeros((sch_mat.shape[0] + num_B0, sch_mat.shape[1]))
 sch_mat_b0[ind_b0, 4:] = sch_mat[0, 4:]
 sch_mat_b0[ind_b, :] = sch_mat
 num_mris = sch_mat_b0.shape[0]
-
-#print('ind_b0', ind_b0)
-#print('ind_b', ind_b)
-#print('num_B0', num_B0)
-#print('sch_mat_b0', sch_mat_b0)
-#print('num_mris', num_mris)
 
 # %% Load single-fascicle canonical dictionary
 ld_singfasc_dic = util.loadmat('MC_dictionary_hcp.mat')
@@ -112,12 +103,6 @@ WM_DIFF = ld_singfasc_dic['WM_DIFF']
 S0_fasc = ld_singfasc_dic['S0_fascicle']
 sig_csf = ld_singfasc_dic['sig_csf']  # already T2-weighted as well
 subinfo = ld_singfasc_dic['subinfo']  # just used for displaying results
-
-#print('num_atoms', num_atoms)
-#print('WM_DIFF', WM_DIFF)
-#print('S0_fasc', S0_fasc.shape)
-#print('sig_csf', sig_csf.shape)
-#print('subinfo', subinfo)
 
 S0_max = np.max(S0_fasc)
 assert num_atoms == len(subinfo['rad']), "Inconsistency dictionaries"
@@ -157,10 +142,7 @@ DW_image_store = np.zeros((552, num_samples))
 DW_noisy_store = np.zeros((552, num_samples))
 
 # memory for storing groundtruth fascicle directions
-if use_prerot:
-    orientations = np.zeros((num_samples, num_fasc))
-else:
-    orientations = np.zeros((num_samples, num_fasc, 3))
+orientations = np.zeros((num_samples, num_fasc, 3))
 
 # memory for storing estimated directions from DW signal
 est_orientations = np.zeros((num_samples, num_fasc, 3))
@@ -247,17 +229,13 @@ nu_min_values = [0.5, 0.4, 0.3, 0.2, 0.1]
 SNR_min_values = [10, 30, 50]
 
 for nu_min in nu_min_values:
-    #nu_max = 1-nu_min
     for SNR_ind in range(len(SNR_min_values)):
         SNR_min = SNR_min_values[SNR_ind]
         
-
-        for j in range(num_it):
-            
+        for j in range(num_it):            
             nu1 = nu_min
             nu2 = 1-nu_min
-            #nu1 = nu_min + (nu_max - nu_min) * np.random.rand()
-            #nu2 = 1 - nu1
+
             ID_1 = np.random.randint(0, num_atoms)
             ID_2 = np.random.randint(0, num_atoms)
             if SNR_dist == 'triangular':
@@ -421,14 +399,8 @@ time_elapsed = time.time() - starttime
 print('%d samples created in %g sec.' % (num_samples, time_elapsed))
 
 
-#print('DW_image_store', DW_image_store)
-
-#print('DW_noisy_store', DW_noisy_store)
-
 # %% Save results
-# plus d'actualité: Note! The DW-MRI signal is not stored! just the output of NNLS
-# --> ca j'ai changé :-)
-# en fait non, seulement ajouter pour < 500 000, si c est + matlab ne veut pas
+# Note! The DW-MRI signal is not stored! just the output of NNLS
 save_res=True
 print('--- save dico ----', save_res)
 
@@ -536,19 +508,18 @@ Detect missed fascicles by orientation estimation procedure:
 
 #%% Enregistrer DW_image dans pickle files
 
-import pickle
+save_pickle = False
 
-# save_dir = 'synthetic_data' 
-# SNR_str = 'uniform'
-# num_samples = 600000
-filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_TEST2" %
-                          (SNR_str, num_samples))
-filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_TEST2" %
-                          (SNR_str, num_samples))
-
-with open(filename1, 'wb') as f:
-    pickle.dump(DW_image_store, f)
-    f.close()
-with open(filename2, 'wb') as f:
-    pickle.dump(DW_noisy_store, f)
-    f.close()
+if save_pickle:
+    import pickle   
+    filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_TEST2" %
+                              (SNR_str, num_samples))
+    filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_TEST2" %
+                              (SNR_str, num_samples))
+    
+    with open(filename1, 'wb') as f:
+        pickle.dump(DW_image_store, f)
+        f.close()
+    with open(filename2, 'wb') as f:
+        pickle.dump(DW_noisy_store, f)
+        f.close()

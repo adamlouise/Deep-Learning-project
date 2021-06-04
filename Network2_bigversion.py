@@ -8,8 +8,6 @@ Created on Sun Nov 15 11:23:10 2020
 
 import numpy as np
 import matplotlib.pyplot as plt
-import os
-import sys
 import pickle
 import time
 
@@ -29,7 +27,7 @@ from sklearn.preprocessing import StandardScaler
 #    sys.path.insert(0, path_to_utils)
 
 import mf_utils as util
-from hyperopt import fmin, tpe, hp, STATUS_OK, Trials
+from hyperopt import fmin, tpe, STATUS_OK, Trials # package for optimization
 from scipy import stats
 
 from sklearn.metrics import mean_absolute_error
@@ -51,7 +49,7 @@ save_params = True
 save_scaler = True
 save_net = True
 save_res = False
-
+TESTNUM = '4_6' # change name for not overwriting old graphs/data
 
 params = {
     #Training parameters
@@ -81,6 +79,14 @@ params = {
      #"dropout": hp.choice("dropout", [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4])
 }
 
+if save_params:
+    filename = 'params/M2_params_%s' %TESTNUM 
+    with open(filename, 'wb') as f:
+              pickle.dump(params, f)
+              f.close()
+              
+# Numbers of train, test and validation
+
 num_samples = params["num_samples"]
 num_div = int(num_samples/6)
 
@@ -91,44 +97,33 @@ num_valid_samples = int(num_test_samples + num_div)
 if (num_samples != num_valid_samples):
     raise "Division of data in train, test, valid does not work"
 
-if save_params:
-    filename = 'params/M2_params_2_6' 
-    with open(filename, 'wb') as f:
-              pickle.dump(params, f)
-              f.close()
-
 # %% Data via pickle files
 
-print('Aller c est partii')
+print("--- Load and reshape w vectors ---")
+
+## Load 
+
 filename1 = 'synthetic_data/dataNW2_w_store_version8'
 filename2 = 'synthetic_data/dataNW2_targets_version8' 
 
-if new_gen:
-    
-    print("on load avec gen_batch_data")
-    
+if new_gen:   
     from getDataW import gen_batch_data
-
-    w_store, target_params = gen_batch_data(0, num_samples, 'train')
-    print(w_store.shape, target_params.shape)
-    
+    w_store, target_params = gen_batch_data(0, num_samples, 'train')   
     if nouvel_enregist:
-        print('et on enregistre :-) ')
         with open(filename1, 'wb') as f:
                 pickle.dump(w_store, f)
                 f.close()
         with open(filename2, 'wb') as f:
                 pickle.dump(target_params, f)
                 f.close()
-
-if via_pickle:   
-    print("on load via les fichiers pickle :-) ")     
+    print('generation OK via new_gen \n', 'saved?', nouvel_enregist)
+    
+if via_pickle:     
     w_store = pickle.load(open(filename1, 'rb'))
-    target_params = pickle.load(open(filename2, 'rb'))    
+    target_params = pickle.load(open(filename2, 'rb'))   
+    print('loading via pickle OK')
 
-# %% Train data
-
-print('----------------------- Data --------------------------')
+## Reshape data
 
 # divide data in train, test and validation
 x_train = np.zeros((num_train_samples, num_atoms, num_fasc))
@@ -138,40 +133,38 @@ x_valid = np.zeros((num_div, num_atoms, num_fasc))
 x_train[:, :, 0] = w_store[0:num_train_samples, 0:num_atoms]
 x_train[:, :, 1] = w_store[0:num_train_samples, num_atoms: 2*num_atoms]
 
-print(num_train_samples)
-print(num_test_samples)
-print(w_store.shape)
 x_test[:, :, 0] = w_store[num_train_samples:(num_test_samples), 0:num_atoms]
 x_test[:, :, 1] = w_store[num_train_samples:(num_test_samples), num_atoms: 2*num_atoms]
 
 x_valid[:, :, 0] = w_store[(num_test_samples):num_samples, 0:num_atoms]
 x_valid[:, :, 1] = w_store[(num_test_samples):num_samples, num_atoms: 2*num_atoms]
 
-print('x_train size', x_train.shape)
-print('x_test size', x_test.shape)
-print('x_valid size', x_valid.shape)
-
+# changes for pytorch
 x_train = torch.from_numpy(x_train)
 x_test = torch.from_numpy(x_test)
 x_valid = torch.from_numpy(x_valid)
 
-# quelques modifs pour le modele neuronal
 x_train = x_train.float()
 x_test = x_test.float()
 x_valid = x_valid.float()
 
 
-
 # %% Target data
 
-print("--- Taking microstructural properties of fascicles ---")
+print("--- Take microstructural properties of fascicles ---")
 
-#Scaling: scaler: (num_samples, num_features)
+# Scaling: Standardization of properties
 scaler2 = StandardScaler()
-target_params = scaler2.fit_transform(target_params)
+target_params = scaler2.fit_transform(target_params) #scaler: (num_samples, num_features)
 target_params = torch.from_numpy(target_params)
 
-## Dividing in train test and valid
+if save_scaler:
+    filename = 'NN2_scaler2_version8_%s' %TESTNUM 
+    with open(filename, 'wb') as f:
+              pickle.dump(scaler2, f)
+              f.close()
+
+# Divide in train test and valid
 
 target_train = target_params[:num_train_samples, :]
 target_test = target_params[num_train_samples:num_test_samples, :]
@@ -181,23 +174,10 @@ target_train = target_train.float()
 target_test = target_test.float()
 target_valid = target_valid.float()
 
-print(target_train[0, :])
-
-print('target_train size', target_train.shape)
-print('target_test size', target_test.shape)
-print('target_valid size', target_valid.shape)
-
-if save_scaler:
-    filename = 'NN2_scaler2_version8_2_6' 
-    with open(filename, 'wb') as f:
-              pickle.dump(scaler2, f)
-              f.close()
-
 
 # %% Defining the networks
 
 # Network 1
-
 class Net_w(nn.Module):
 
     def __init__(self, num_in, num_h1, num_h2, num_h3, num_out, drop_prob):
@@ -206,7 +186,7 @@ class Net_w(nn.Module):
         self.W_1 = Parameter(init.kaiming_uniform_(torch.Tensor(num_h1, num_in)))
         self.b_1 = Parameter(init.constant_(torch.Tensor(num_h1), 0))
 
-        # hidden layer
+        # hidden layers
         self.W_2 = Parameter(init.kaiming_uniform_(torch.Tensor(num_h2, num_h1)))
         self.b_2 = Parameter(init.constant_(torch.Tensor(num_h2), 0))
         
@@ -217,7 +197,6 @@ class Net_w(nn.Module):
         self.b_4 = Parameter(init.constant_(torch.Tensor(num_out), 0))
         
         self.activation = torch.nn.ReLU()
-        
         self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, x):
@@ -248,7 +227,7 @@ class Net_f(nn.Module):
         self.W_1 = Parameter(init.kaiming_uniform_(torch.Tensor(num_h1, num_in)))
         self.b_1 = Parameter(init.constant_(torch.Tensor(num_h1), 0))
 
-        # hidden layer
+        # hidden layers
         self.W_2 = Parameter(init.kaiming_uniform_(torch.Tensor(num_h2, num_h1)))
         self.b_2 = Parameter(init.constant_(torch.Tensor(num_h2), 0))
         
@@ -271,7 +250,7 @@ class Net_f(nn.Module):
 
         return x
 
-# Network 3
+# Total network to gather the two others
 class Net_tot(nn.Module):
 
     def __init__(self, numw_in, numw_l1, numw_l2, numw_l3, numw_out, numf_in, numf_l1, numf_l2, numf_out, drop):
@@ -281,69 +260,60 @@ class Net_tot(nn.Module):
 
     def forward(self, w1, w2):
         x1 = self.netw(w1)
-        x2 = self.netw(w2)
-        
+        x2 = self.netw(w2)        
         x = torch.cat((x1, x2), axis=1)
-
         x = self.netf(x)
 
         return x
 
-#%% 
+#%% wrap function for Training 
 
 def train_network(params: dict):
-    # Building training loop
+
     num_w_out = params["num_w_out"] 
     num_w_l1 = params["num_w_l1"]
     num_w_l2 = params["num_w_l2"]
     num_w_l3 = params["num_w_l3"]
     num_w_in = num_atoms
-    num_f_out = num_params #nombre de paramètres à estimer
+    num_f_out = num_params # number of parameters to estimate
     num_f_l1 = params["num_f_l1"]
     num_f_l2 = params["num_f_l2"]
-    num_f_in = num_w_out*num_fasc #ici 10*2
+    num_f_in = num_w_out*num_fasc
     drop = params["dropout"]
     
     net_tot = Net_tot(num_w_in, num_w_l1, num_w_l2, num_w_l3, num_w_out, num_f_in, num_f_l1, num_f_l2, num_f_out, drop)
     
-    print(net_tot)
-    
     # Optimizer and Criterion
-    
-    #optimizer = optim.Adam(net_tot.parameters(), lr=params["learning_rate"], weight_decay=0.0000001)
-    optimizer = optim.Adam(net_tot.parameters(), lr=params["learning_rate"])
+    optimizer = optim.Adam(net_tot.parameters(), 
+                           lr=params["learning_rate"]
+                           #weight_decay=0.0000001 #easier to tune parameters without weight decay
+                           )
     lossf = nn.MSELoss()
-    
     
     print('----------------------- Training --------------------------')
     
     start = time.time()
     
     # setting hyperparameters and gettings epoch sizes
-    batch_size = params["batch_size"] #100 
-    num_epochs = params["num_epochs"] #200
+    batch_size = params["batch_size"] 
+    num_epochs = params["num_epochs"]
     
     num_samples_train = num_train_samples
-    num_batches_train = num_samples_train // batch_size #??
+    num_batches_train = num_samples_train // batch_size
     num_samples_valid = num_div
     num_batches_valid = num_samples_valid // batch_size
-    
-    print(num_batches_train, num_batches_valid)
     
     # setting up lists for handling loss/accuracy
     train_acc = np.zeros((num_epochs, num_params))
     valid_acc = np.zeros((num_epochs, num_params))
-    
     meanTrainError, meanValError  = [], []
-
     cur_loss = 0
     losses = []
-    
-    # lambda function
+
     get_slice = lambda i, size: range(i * size, (i + 1) * size)
     
-    for epoch in range(num_epochs):
-        # Forward -> Backprob -> Update params
+    for epoch in range(num_epochs): # Forward -> Backprob -> Update params
+
         ## Train
         cur_loss = 0
         net_tot.train()
@@ -362,6 +332,7 @@ def train_network(params: dict):
             optimizer.step()
             
             cur_loss += batch_loss   
+            
         losses.append(cur_loss / batch_size)
     
         net_tot.eval()
@@ -422,23 +393,17 @@ def train_network(params: dict):
 
 #%% Training the network 
 
-tic = time.time()
-
 trial = train_network(params)
+
 net_tot = trial['model']
-
-toc = time.time()
-train_time = toc - tic
-print("training time: ", train_time)
-
-#%% Save 
+train_time = trial['time']
 
 if save_net:
-    PATH = "models_statedic/M2_version8_StateDict_2_6.pt"
+    PATH = "models_statedic/M2_version8_StateDict_%s.pt" %TESTNUM
     torch.save(net_tot.state_dict(), PATH)
 
 if save_res:
-    filename = 'results/M2_trial_version8_2_6' 
+    filename = 'results/M2_trial_version8_%s' %TESTNUM 
     with open(filename, 'wb') as f:
               pickle.dump(trial, f)
               f.close()
@@ -446,11 +411,11 @@ if save_res:
 
 #%% Graphs for Learning
 
-#import matplotlib.pyplot as plt
-
+# If loading old results
 if new_training==False:
     filename = 'results/NN2_trial_version8'
     trial = pickle.load(open(filename, 'rb'))
+
 
 train_acc = trial['train_acc']
 valid_acc = trial['valid_acc']
@@ -481,10 +446,9 @@ for i in range(2):
         #axs[i,j].grid()
         #axs[i,j].legend(['Train error','Validation error'])
 fig.legend(['Train error','Validation error'])     
+plt.savefig("graphs/NN2_LC_6properties_%s.pdf" %TESTNUM, dpi=150)  
 
-#plt.savefig("graphs/NN2_LC_6properties.pdf", dpi=150)  
-
-## - 2 - Graoh for learning curve of Mean Error
+## - 2 - Graph for learning curve of Mean Error
 
 fig3, axs3 = plt.subplots(1, 1)
 
@@ -498,8 +462,7 @@ fig3.legend(['Mean Train error','Mean Validation error'])
 axs3.set_xlabel('Epochs'), 
 axs3.set_ylabel('Mean Scaled Error')
 axs3.axis([0, len(epoch)-5, 0, 0.6])
-
-#plt.savefig("graphs/NN2_LC_MeanError.pdf", dpi=150) 
+plt.savefig("graphs/NN2_LC_MeanError_%s.pdf" %TESTNUM, dpi=150) 
 
 ## - 3 - Graph for Learning curve of 3 properties (mean over fascicles)
 
@@ -518,39 +481,28 @@ for j in range(3):
     #axs2[j].grid()
 
 fig2.legend(['Train error','Validation error'])  
+plt.savefig("graphs/NN2_LC_3prop_%s.pdf" %TESTNUM, dpi=150) 
 
-#plt.savefig("graphs/NN2_LC_3prop.pdf", dpi=150) 
-
-# %% Predictions (Testing)
-print('----------------------- Prediction --------------------------')
+# %% Predictions with test data
 
 # predict and time
-tic = time.time()
-output = net_tot(x_test[:,:,0], x_test[:,:,1])
-output = output.detach().numpy()
-toc = time.time()
-predic_time = toc - tic
-print("prediction time: ", predic_time)
+output_test = net_tot(x_test[:,:,0], x_test[:,:,1])
+output_test = output_test.detach().numpy()
 
 # mean absolute scaled error for 6 properties
 mean_err_scaled = np.zeros(6)
 for i in range(6):
-    mean_err_scaled[i] = mean_absolute_error(output[:,i], target_test[:,i])
-
-print("mean_abs_err", mean_err_scaled)
-
-
-#%% 95% interval
-
-output = scaler2.inverse_transform(output)
+    mean_err_scaled[i] = mean_absolute_error(output_test[:,i], target_test[:,i])
+    
+# 95% interval
+output_scaled = scaler2.inverse_transform(output_test)
 target_scaled = scaler2.inverse_transform(target_test)
 
-error = output - target_scaled
+error = output_scaled - target_scaled
 conf_int = np.zeros(num_params)
 
 for j in range(num_params):
-    data = error[:,j]
-    
+    data = error[:,j]   
     mean = np.mean(data)
     sigma = np.std(data)
     
@@ -559,151 +511,11 @@ for j in range(num_params):
     print(confint)
     print((-confint[0]+confint[1])/2)
     
-    
-#%%
 
-print("---- Prediction with files -----")
+#%% Optimization of hyperparameters withOUT hyperopti package
+# recompile hyperparameters dictionary between each test !!! 
 
-## 1 ## Constructing net
-
-from Classes.Net2_Class import create_Net2
-
-params2 = pickle.load(open('params/M2_params_2_6', 'rb'))
-
-net2 = create_Net2(params2) 
-    
-PATH = "models_statedic/M2_version8_StateDict_2_6.pt"
-net2.load_state_dict(torch.load(PATH))
-net2.eval()
-
-## 2 ## Loading data
-
-filename1 = 'data_TEST2/dataNW2_w_store_TEST2'
-filename2 = 'data_TEST2/dataNW2_targets_TEST2' 
-
-print("on load via les fichiers pickle :-) ")     
-w_store = pickle.load(open(filename1, 'rb'))
-target_params_w = pickle.load(open(filename2, 'rb'))
-
-scaler_w = pickle.load(open('NN2_scaler2_version8_2_6', 'rb'))
-target_params_w = scaler_w.transform(target_params_w)
-
-## 3 ## Computing output
-
-w_test = np.zeros((15000, num_atoms, 2))
-w_test[:, :, 0] = w_store[:,0:num_atoms]
-w_test[:, :, 1] = w_store[:,num_atoms:2*num_atoms]
-w_test = torch.from_numpy(w_test).float()
-print(w_test.shape)
-    
-output2 = net2(w_test[:,:,0], w_test[:,:,1])
-output2 = output2.detach().numpy()
-
-
-## 4 ## mean absolute scaled error for 6 properties
-
-err = abs(output2 - target_params_w)
-
-mean_err_scaled = np.zeros(6)
-for i in range(6):
-    mean_err_scaled[i] = np.mean(err[:,i])
-
-print("mean_abs_err", mean_err_scaled)
-
-
-#%%Analysis
-
-# train_acc = trial['train_acc']
-# valid_acc = trial['valid_acc']
-# epoch = np.arange(params['num_epochs'])
-
-# mean_train_error = trial['meanTrainError']
-
-# for j in range(num_params):    
-#     plt.figure()
-#     plt.plot(epoch, train_acc[:, j], 'r', epoch, valid_acc[:, j], 'b')
-#     plt.legend(['Train error','Validation error'])
-#     plt.xlabel('Updates'), plt.ylabel('Error')
-#     plt.show()
-    
-# meanTrainError = trial['meanTrainError']
-# meanValError = trial['meanValError']
-
-# # Mean Error --> Learning curve
-
-# print(trial['meanTrainError'])
-# plt.figure()
-# plt.plot(epoch, meanTrainError, 'r', epoch, meanValError, 'b')
-# plt.title('Learning Curve: Mean Error - DL after NNLS')
-# plt.grid(b=True, which='major', color='#666666', linestyle='-')
-# plt.minorticks_on()
-# plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-# plt.legend(['Mean Train error','Mean Validation error'])
-# plt.xlabel('Epochs'), plt.ylabel('Mean Scaled Error')
-# plt.axis([0, 30, 0, 1])
-# plt.show()
-
-#%%
-# properties = ['nu1', 'r1', 'f1', 'nu2', 'r2', 'f2']
-# plt.figure()
-# plt.title("Scaled Error for each property")
-# plt.ylabel("Scaled Error")
-# plt.xlabel("properties")
-# plt.bar(properties, mean_err_scaled)
-
-# # descale
-# output = scaler_valid.inverse_transform(output)
-# target_test = scaler_valid.inverse_transform(target_test)
-
-# error = output - target_test
-
-# abserror = abs(error)
-
-# plt.figure()
-# plt.hist(abserror[:,0], density=False, bins=30)  # `density=False` would make counts
-# plt.ylabel('Probability')
-# plt.xlabel('Data')
-# plt.show()
-
-
-#%%Testing Optimisation: for this the params dictionnary needs to be changed (at the beginning of the code)
-
-
-trials = Trials()
-best = fmin(train_network, params, algo=tpe.suggest, max_evals=8, trials=trials)
-
-#print(trials.best_trial['result']['loss'])
-
-#train_acc = trials.best_trial['result']['train_acc']
-
-## GRAPHS FOR OPTIMISATION
-
-
-      
-n = len(trials.results)
-tomin = np.zeros(n)
-to_opti = np.zeros(n)
-for i in range(n):
-    tomin[i]= trials.results[i]['loss']
-    to_opti[i] = trials.results[i]['params']['dropout']
-    
-print(tomin)
-print(to_opti)
-
-plt.figure()
-plt.scatter(to_opti, tomin, 'b')
-plt.title('Optimisation of learning rate (lr=0.001)')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.xlabel('learning_rate'), plt.ylabel('Sum of errors')
-plt.show()
-
-
-#%% ##### HYPEROPTI ######
-# ! recompiler le dictionnaire des params à chaque fois!
-
-# Opti dropout
+# 1 # Opti dropout
 
 dropout = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
 n = len(dropout)
@@ -723,7 +535,7 @@ for i in range(n):
     
     print("Okayy -- ", error_d[0,i], error_d[1,i])
 
-# Opti learning rate
+# 2 # Opti learning rate
 
 lr = [0.0005, 0.0015, 0.0025, 0.005, 0.01]
 n = len(lr)
@@ -743,7 +555,7 @@ for i in range(n):
     
     print("Okayy -- ", error_lr[0,i], error_lr[1,i])
 
-# Opti batch
+# 3 # Opti batch
 
 batch = [500, 1000, 2000, 5000, 10000]
 n = len(batch)
@@ -763,7 +575,8 @@ for i in range(n):
     
     print("Okayy -- ", error_batch[0,i], error_batch[1,i])
 
-# Opti num out
+# 4 # Opti num out
+
 numout = [5, 10, 20, 30, 50, 100]
 n = len(numout)
 
@@ -782,7 +595,7 @@ for i in range(n):
     
     print("Okayy -- ", error_numout[0,i], error_numout[1,i])
 
-#%% Graphe Hyperopti
+#%% Graphs Hyperopti
 
 dropout = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
 error_d = [[0.34716476, 0.3179273,  0.31890046, 0.32934551, 0.34542705, 
@@ -821,7 +634,7 @@ for j in range(3):
     ax1[j].set_ylim(0, 0.5)
     
 fig1.legend(labels)
-plt.savefig("graphs/NN2_hyperopti.pdf", dpi=150) 
+plt.savefig("graphs/NN2_hyperopti_%s.pdf" %TESTNUM, dpi=150) 
 
 
 #%% Influence number samples
@@ -831,17 +644,11 @@ n = len(ns)
 error_ns = np.zeros((2,n))
 x_train_old = x_train
 target_train_old = target_train
-# x_valid_old = x_valid
-# target_valid_old = target_valid
 
 for i in range(n):
     num_train_samples = ns[i]
     x_train = x_train_old[0:num_train_samples, :, :]
     target_train = target_train_old[0:num_train_samples, :]
-    
-    # num_div = int(ns[i]/4)
-    # x_valid = x_valid_old[0:num_div, :, :]
-    # target_valid = target_valid_old[0:num_div, :]
     
     params['batch_size'] = int(num_train_samples/100)
     tic = time.time()
@@ -853,7 +660,7 @@ for i in range(n):
     error_ns[0, i] = trial['meanValError'][-1]
     error_ns[1, i] = trial['meanTrainError'][-1]
     
-    print("Okayy -- ", error_ns[0,i], error_ns[1,i])
+    print("Errors: ", error_ns[0,i], error_ns[1,i])
 
 print(error_ns)    
 
@@ -882,4 +689,4 @@ ax1.yaxis.grid(True)
 ax1.set_ylim(0, 0.6)
     
 fig1.legend(labels)
-plt.savefig("graphs/NN2_numsamples.pdf", dpi=150) 
+plt.savefig("graphs/NN2_numsamples_%s.pdf" %TESTNUM, dpi=150) 

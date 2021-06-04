@@ -35,8 +35,6 @@ from xgboost import XGBRegressor
 
 #%% DW-MRI Data
 
-print('----------------------- Data --------------------------')
-
 use_noise = True
 small_set = False
 big_set = True
@@ -44,10 +42,15 @@ num_params = 6
 num_fasc = 2
 M0 = 500
 num_atoms = 782
+num_sample = 600000
+num_div = num_sample/6
+n_test = '4_6'
+
+save_boost = False
+save_rf = False
 
 if big_set:
     print("big_set")
-    print('data')
     if use_noise:
         filename = 'synthetic_data/DW_noisy_store_uniform_600000__lou_version8'
         data = pickle.load(open(filename, 'rb'))
@@ -56,9 +59,10 @@ if big_set:
         filename = 'synthetic_data/DW_image_store_uniform_600000__lou_version8'
         data = pickle.load(open(filename, 'rb'))
     
-    print('target')
     parameters = util.loadmat(os.path.join('synthetic_data',
-                                            "training_datauniform_600000_samples_lou_version8"))
+                                            "training_datauniform_600000_samples_lou_version8"))    
+    IDs = parameters['IDs'][0:num_sample, :]
+    nus = parameters['nus'][0:num_sample, :]
         
 if small_set:
     print("small_set")
@@ -67,6 +71,9 @@ if small_set:
     filename = 'data/nus_data_lownoise' 
     nus_2 = pickle.load(open(filename, 'rb'))
     
+    IDs = IDs_2[0:num_sample, :]
+    nus = nus_2[0:num_sample, :]
+    
     if use_noise:
         filename = 'data/dw_noisy_data_lownoise'
         data = pickle.load(open(filename, 'rb'))
@@ -74,37 +81,22 @@ if small_set:
         filename = 'data/dw_image_data_lownoise'
         data = pickle.load(open(filename, 'rb'))
 
-#%% Reshaping for num_samples
-#M, num_sample = data.shape #M=552
-num_sample = 600000
-num_div = num_sample/6
 
-if big_set:
-    IDs = parameters['IDs'][0:num_sample, :]
-    nus = parameters['nus'][0:num_sample, :]
-if small_set:
-    IDs = IDs_2[0:num_sample, :]
-    nus = nus_2[0:num_sample, :]
+use_dictionary = False # set to true if only IDs and nus are loaded (and not params)
+if use_dictionary :
+    data_dir = 'synthetic_data'
+    parameters = util.loadmat(os.path.join(data_dir,
+                                           "training_data_"
+                                           "1000000_samples_safe.mat"))  
     
 # divide data in train and test
 x_train = data[:, 0:int(4*num_div)].T
 x_test = data[:, int(4*num_div) : int(6*num_div) ].T
 
-#print(x_train)
-print('x_train size', x_train.shape)
-print('x_test size', x_test.shape)
 
 # %% Target data
 
 print("--- Taking microstructural properties of fascicles ---")
-
-data_dir = 'synthetic_data'
-use_dictionary = False
-
-if use_dictionary :
-    parameters = util.loadmat(os.path.join(data_dir,
-                                           "training_data_"
-                                           "1000000_samples_safe.mat"))  
         
 target_params = np.zeros((6, num_sample))
 
@@ -115,28 +107,57 @@ target_params[3,:] = nus[:,1]
 target_params[4,:] = parameters['subinfo']['rad'][IDs[:,1]]
 target_params[5,:] = parameters['subinfo']['fin'][IDs[:,1]]
 
-print('target_params', target_params.shape)
-
-## Standardisation
-
+# Standardisation
 scaler1 = StandardScaler()
 target_params = scaler1.fit_transform(target_params.T)
 target_params = target_params.T
 
-## Dividing in train test and valid
-prop = 3 #between 0 and 5: the property we will predict
+# Dividing in train test and valid
 target_train = target_params[:, 0:int(num_div*4)].T
 target_test = target_params[:, int(num_div*4) : int(6*num_div) ].T
 
-print('target_train size', target_train.shape)
-print('target_test size', target_test.shape)
 
+#%% Gradient Boosting
+
+# fit model to training data
+tic = time.time()
+boost = MultiOutputRegressor(XGBRegressor())
+boost.fit(x_train, target_train)
+toc = time.time()
+t = toc - tic
+
+# make predictions for test data
+y = boost.predict(x_test)
+
+# compute error
+error_vect_b = abs(y - target_test)
+error_b = np.mean(error_vect_b)
+
+print('error boosting:', error_b)
+print('time boosting:', t)
+
+# Analysis of errors for 6 properties
+error=[]
+for i in range(6):
+    mean_err = np.mean(error_vect_b[:,i])
+    error.append(mean_err)
+print(error)
+
+if save_boost:
+    filename = 'models_statedic/M3_GradientBoosting_version8_%s' %n_test 
+    with open(filename, 'wb') as f:
+            pickle.dump(boost, f)
+            f.close()
+            
+# To load:        
+# model_b = pickle.load(open(filename, 'rb'))
+# model_b.get_params()
 
 
 #%% Finding Max depth
 
-use_DT = False
-use_RF = True
+use_DT = False  # test on decision tree
+use_RF = True   # test on random forest
 #essais = [2, 5, 15, 20]
 max_depths = [12]
 number_trees = [40]
@@ -162,8 +183,6 @@ for (i_md) in (max_depths):
             t = toc - tic
             print('error tree:', error_tree)
             print('time tree:', t)
-            #errors_tree.append(error)
-            #times_tree.append(t)
     
         if use_RF:
             print('- RF')
@@ -178,74 +197,32 @@ for (i_md) in (max_depths):
             t = toc - tic
             print('error rf:', error_rf)
             print('time rf:', t)
-        
-        # errors_rf.append(error)
-        # times_rf.append(t)
-        
-    #regr_rf.feature_importances_
 
-#%% Propriété par propriété
+# save last rf model
+if save_rf:
+    filename = 'models_statedic/M3_RandomForest_version8_%s' %n_test 
+    with open(filename, 'wb') as f:
+            pickle.dump(regr_rf, f)
+            f.close()
 
-from xgboost import XGBRegressor
+#%% Train property by property
 
 for i in range(6):
-    # fit model no training data
+    # fit model to training data
     tic = time.time()
     boost = XGBRegressor()
     boost.fit(x_train, target_train[:,i])
+    toc = time.time()
+    t = toc - tic
     
     # make predictions for test data
     y = boost.predict(x_test)
     
     error_b_prop = np.mean(abs(y - target_test[:,i]))
-    toc = time.time()
-    t = toc - tic
     
     print('error', error_b_prop)
     print('time', t)
     
-#%% Boosting trees
-
-# fit model no training data
-tic = time.time()
-boost = MultiOutputRegressor(XGBRegressor())
-boost.fit(x_train, target_train)
-
-# make predictions for test data
-y = boost.predict(x_test)
-
-error_vect_b = abs(y - target_test)
-error_b = np.mean(error_vect_b)
-toc = time.time()
-t = toc - tic
-print('error boosting:', error_b)
-print('time boosting:', t)
-
-#%% Analyser les 6 erreurs seules
-
-error=[]
-for i in range(6):
-    mean_err = np.mean(error_vect_b[:,i])
-    error.append(mean_err)
-
-print(error)
-
-#%% Save models
-
-filename = 'models_statedic/M3_RandomForest_version8_1NoNoise' 
-with open(filename, 'wb') as f:
-        pickle.dump(regr_rf, f)
-        f.close()
- 
-#%%
-filename = 'models_statedic/M3_GradientBoosting_version8_1' 
-# with open(filename, 'wb') as f:
-#         pickle.dump(boost, f)
-#         f.close()
-        
-model_b = pickle.load(open(filename, 'rb'))
-
-print(model_b.get_params())
 
 #%%Influence number of samples
 
@@ -327,13 +304,6 @@ for i in estimators:
 
 print(error_ns)   
 
-    #%% Hyperopti
-
-multioutputregressor = MultiOutputRegressor(XGBRegressor(n_estimators=950, learning_rate=0.01,
-max_depth=9,
-min_sample_size = 0.8,
-random_state=0
-)).fit(X_train, y_train)
 
 #%% graph ns
 
@@ -410,111 +380,3 @@ ax2[0].set_ylabel('Mean absolute error')
 
 plt.savefig("graphs/M3_B_params.pdf", dpi=150) 
 
-#%%  Graphs
-
- 
-plt.figure()
-plt.plot(essais, errors_rf, marker='o')
-plt.title('Errors - 50 000 training samples - SNR 80-100')
-plt.xlabel('max depth')
-plt.ylabel('mean absolute error')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
-
-plt.figure()
-plt.plot(essais, times_rf, marker='o')
-plt.title('Time - 50 000 training samples - SNR 80-100')
-plt.xlabel('max depth')
-plt.ylabel('Time')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
-
-plt.figure()
-plt.plot(times_rf, errors_rf, marker='o')
-plt.title('Time vs error for trees SNR 80-100')
-plt.ylabel('mean absolute error (scaled)')
-plt.xlabel('computation time [s]')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
-
-plt.figure()
-plt.plot(essais, errors_tree, essais, errors_rf, marker='o')
-plt.title('Errors - 50 000 training samples - SNR 80-100')
-plt.xlabel('max depth')
-plt.ylabel('mean absolute error')
-plt.legend(['Trees','Random Forest'])
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
-
-plt.figure()
-plt.plot(essais, times_tree, essais, times_rf, marker='o')
-plt.title('Time - 50 000 training samples - SNR 80-100')
-plt.xlabel('max depth')
-plt.ylabel('Time')
-plt.legend(['Trees','Random Forest'])
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
-
-plt.figure()
-plt.plot(times_tree, errors_tree, marker='o')
-plt.title('Time vs error for trees SNR 80-100')
-plt.ylabel('mean absolute error (scaled)')
-plt.xlabel('computation time [s]')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
-
-plt.figure()
-plt.plot(errors_rf, times_rf, marker='o')
-plt.title('Time vs error for RandomForest SNR 80-100')
-plt.xlabel('mean absolute error')
-plt.ylabel('computation time')
-plt.grid(b=True, which='major', color='#666666', linestyle='-')
-plt.minorticks_on()
-plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-plt.show()
-
-#%% Graph
-
-# essais_plot = [2, 5, 7, 10, 12, 15, 17, 20, 25]
-# errors_plot = [0.566, 0.458, 0.411 , 0.3618, 0.34208, 0.3266, 0.3226, 0.3206, 0.3203]
-# times_plot = [555.2, 1020.5, 1687.1, 1991.3, 2548.4, 2502.71, 7798.3, 6898.4, 5664.4]
-
-# plt.figure()
-# plt.plot(essais_plot, errors_plot, marker='o')
-# plt.xlabel('max depth')
-# plt.ylabel('mean absolute error')
-# plt.title('Error depending on tree size')
-# plt.show()
-# plt.figure()
-# plt.plot(essais_plot, times_plot, marker='o')
-# plt.xlabel('max depth')
-# plt.ylabel('computation time')
-# plt.title('Time depending on tree size')
-# plt.show()
-# plt.figure()
-# plt.plot(errors_plot, times_plot, marker='o')
-# plt.yscale("log")
-# plt.xlabel('mean absolute error')
-# plt.grid(b=True, which='major', color='#666666', linestyle='-')
-# plt.minorticks_on()
-# plt.grid(b=True, which='minor', color='#999999', linestyle='-', alpha=0.2)
-# plt.ylabel('computation time')
-# plt.title('Error vs Time')
-# plt.show()
-
-
-        
-
-    

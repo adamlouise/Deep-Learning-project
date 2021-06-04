@@ -12,53 +12,29 @@ num_fasc = 2
 use_pretrained = False
 use_GPU = False
 
-# Hyper-parameters listed in Excel table
 sum_to_one = False
 remove_mean = True
 unit_variance = True
 center_target = True
 SNR_dist = 'uniform'  # 'uniform' or 'triangular'
-
 normalisation = False
 
 num_epochs = 5
 batch_size = 200
-#num_training_samples = 500000
-lrn_rate = 0.01
-# lr_values = [0.01, 0.005, 0.001, 0.0005, 0.0001]
-#momentum = 0.9  # for SGD with Nesterov=True
-lr_decay = 0  # default in Adagrad is zero
 myseed = 141414
-
 
 target_names = ['nu1', 'r1 ', 'f1 ', 'nu2', 'r2 ', 'f2 ']
 num_var = len(target_names)
-# Set random seeds manually
-# Adagrad b=200 data_1000000 good: 14141414, 305894214
-# numpy and pytorch defaults
-# bad: 141414, 424242, 123456789, 987654321, 111111
-
-#np.random.seed(myseed)
-#torch.manual_seed(myseed+1)
-
 
 assert unit_variance != sum_to_one, ("Choose one of two normalization "
                                      "strategies: either unit sum or unit "
                                      "variance.")
-
-# Precomputed 1st-stage data
-# if SNR_dist == 'uniform':
-#     nnls_output = util.loadmat(os.path.join('synthetic_data',
-#                                             "training_data_"
-#                                             "1000000_samples_safe.mat"))
-#     validation_data = nnls_output
 
 #Test    
 if SNR_dist == 'uniform':
     nnls_output = util.loadmat(os.path.join('data_TEST2',
                                             "training_datauniform_15000_samples_lou_TEST2"))
     validation_data = nnls_output
-
 
 # Substrate (=fingerprint) properties
 sub_rads = nnls_output['subinfo']['rad']  # Python list
@@ -67,9 +43,7 @@ tot_samples = nnls_output['num_samples']
 
 #%% For normalization of target outputs
 
-normalization=True
-
-if normalization:
+if normalisation:
     rad_min = np.min(nnls_output['subinfo']['rad'])
     rad_range = np.max(nnls_output['subinfo']['rad']) - rad_min
     print(rad_range)
