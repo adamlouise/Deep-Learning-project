@@ -22,18 +22,18 @@ from dipy.reconst.csdeconv import ConstrainedSphericalDeconvModel
 from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 
-# See check_synthetic_data.py for explanations of the lines below
-# path_to_utils = os.path.join('python_functions')
-# path_to_utils = os.path.abspath(path_to_utils)
-# if path_to_utils not in sys.path:
-#     sys.path.insert(0, path_to_utils)
 import mf_utils as util
 import pickle
+from matplotlib.colors import LogNorm
+
 
 # ---- Set input parameters here -----
+n_test = '9_6_TEST2_descaled' # used for saving
+
 use_prerot = False  # use pre-rotated dictionaries
 sparse = True  # store data sparsely to save space
-save_res = False  # save mat file containing data
+
+save_err = True # save error in pickle file
 SNR_dist = 'uniform'  # 'uniform' or 'triangular'
 num_sample = 15000
 save_dir = 'synthetic_data'  # destination folder
@@ -48,7 +48,6 @@ np.random.seed(rand_seed)
 
 use_noise = True
 use_NoNoise = True
-print("Noise", use_noise)
 
 if use_noise:
     filename = 'data_TEST2/DW_noisy_store_uniform_15000__lou_TEST2'
@@ -76,9 +75,11 @@ target_params_y[3,:] = nus[:,1]
 target_params_y[4,:] = target_data['subinfo']['rad'][IDs[:,1]]
 target_params_y[5,:] = target_data['subinfo']['fin'][IDs[:,1]]
 
-scaler_y = StandardScaler()
-target_params_y = scaler_y.fit_transform(target_params_y.T)
-target_params_y = target_params_y.T
+scaled = False
+if scaled:
+    scaler_y = StandardScaler()
+    target_params_y = scaler_y.fit_transform(target_params_y.T)
+    target_params_y = target_params_y.T
 
 baseline = np.mean(abs(target_params_y), 0)
 mean_baseline_prop = np.mean(abs(target_params_y), 1)
@@ -131,14 +132,15 @@ est_dir1 = target_data['est_orientations'][:, 0, :]
 est_dir2 = target_data['est_orientations'][:, 1, :]
 
 
-#%% 2 ROTATION DU DICTIONNAIRE 
-#   et 
+#%% 2 ROTATION OF DICTIONARY
+#   and
 #   3 DICTIONNARY SEARCH
 
 num_sample = 15000
 w_nneg_store = np.zeros((num_sample,2))
 ind_atoms_subdic_store = np.zeros((num_sample,2))
 start_search = time.time()
+dicsizes = np.array([782, 782])
 
 for i in range(num_sample):
     
@@ -150,11 +152,9 @@ for i in range(num_sample):
     dictionary[:, num_atoms:] = util.rotate_atom(dic_sing_fasc,
                                                  sch_mat_b0,
                                                  refdir,
-                                                 cyldir_2[i,:],
-                                                 #est_dir2[i,:],
+                                                 #cyldir_2[i,:],
+                                                 est_dir2[i,:],
                                                  WM_DIFF, S0_fasc)
-    
-    dicsizes = np.array([782, 782])
     
     w_nneg, ind_atoms_subdic, ind_atoms_totdic, min_obj, y_recons = util.solve_exhaustive_posweights(dictionary, y_data[:, i], dicsizes)
     
@@ -164,8 +164,6 @@ for i in range(num_sample):
 time_search = time.time() - start_search   
 
 #%% Calcul et enregistrement de l'erreur
-
-save_err = True
 
 est_params = np.zeros((6, num_sample))
 
@@ -178,23 +176,25 @@ est_params[3,:] = w_nneg_store[:,1]
 est_params[4,:] = subinfo['rad'][indexes[:,1]]
 est_params[5,:] = subinfo['fin'][indexes[:,1]]
 
-est_params = scaler_y.transform(est_params.T)
-est_params = est_params.T
+if scaled:
+    est_params = scaler_y.transform(est_params.T)
+    est_params = est_params.T
 
 error = abs(est_params - target_params_y[:, :num_sample])
 
 error_prop = np.mean(error, 1)
 
 mean_error = np.mean(error_prop)
-print(mean_error)
+print(error_prop)
 
 if save_err:
-    filename = 'error_M1_testdata_TEST2_TrueOrientations'
+    filename = 'error_M1_testdata_EstOrientations_%s' %n_test
     with open(filename, 'wb') as f:
         pickle.dump(error, f)
         f.close()
+        print("error saved")
 
-#%% Evaluate estimation of orientations
+#%% Evaluate estimation of orientations (code Gaetan)
 
 orientations = target_data['orientations']
 
@@ -229,13 +229,14 @@ err_dir2[~is_option1] = np.arccos(dp_option2_2[~is_option1]) * 180/np.pi
 dp_est = np.sum(est_orientations[:, 0, :]*est_orientations[:, 1, :], axis=-1)
 est_ang_sep = np.arccos(np.clip(np.abs(dp_est), 0, 1)) * 180/np.pi
 
+# error
+
 mean_ang_err = (abs(err_dir1) + abs(err_dir2))/2
 ang_err2 = np.zeros((2, num_sample))
 ang_err2[0, :] = err_dir1 
 ang_err2[1, :] = err_dir2 
 
 # Diviser les ang_err en fonction du bruit et de nu
-
 reshape_ang_err = np.zeros((3, 5, 1000))
 reshape_ang_err2 = np.zeros((2, 3, 5, 1000))
 for i in range(3):
@@ -248,8 +249,6 @@ for i in range(3):
 
 #%% Histogram of angular error
 
-n_test = '26_5_TEST2'
-
 plt.hist(mean_ang_err, bins=15, color='steelblue', edgecolor='white')
 plt.title('Histogram of angular error for orientation estimation')
 plt.ylabel('Number of samples')
@@ -258,14 +257,9 @@ plt.grid(True, axis='y')
 
 plt.savefig("graphs/AngErr_test%s.pdf" %n_test, dpi=150) 
 
-#%% hist2D
-
-n_test = '26_5_TEST2'
-from matplotlib.colors import LogNorm
+#%% hist2D --> Fail 
 
 ang_err = np.array([err_dir1, err_dir2])
-#bin_x = np.arange(0, 90, 1)
-#bin_y = np.arange(0, 90, 1)
 plt.hist2d(abs(err_dir1), abs(err_dir2), bins=6, alpha=0.8, cmin = 0.9, norm=LogNorm())
 plt.colorbar()
 plt.title('Histogram of angular error for orientation estimation')
@@ -283,7 +277,6 @@ SNR = [10, 30, 50]
 labels = ['fascicle 1', 'fascicle 2']
 
 for i in range(3):
-    #to_plot = np.mean(reshape_ang_err[i, :, :], 1)
     to_plot1 = np.mean(reshape_ang_err2[0, i, :, :], 1)
     to_plot2 = np.mean(reshape_ang_err2[1, i, :, :], 1)
     

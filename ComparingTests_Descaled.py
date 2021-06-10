@@ -18,7 +18,7 @@ import time
 from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 
-n_test = '2_6_TEST2' # date for saving
+n_test = '8_6_TEST2_descaled' # date for saving
 num_sample = 15000 # size test set
 n_sa = 1000
 SNR = [10, 30, 50]
@@ -32,10 +32,14 @@ num_atoms = 782
 n_SNR = len(SNR)
 n_nu = len(nu_min)
 
+load_scaler1 = True
+load_scaler2 = True
+scaled = False
+
 #%% Load Dw_image data
 
 use_noise = True
-use_NoNoise = True
+use_NoNoise = False
 print("Noise", use_noise)
 
 if use_noise:
@@ -72,24 +76,20 @@ target_params_y[3,:] = nus[:,1]
 target_params_y[4,:] = target_data['subinfo']['rad'][IDs[:,1]]
 target_params_y[5,:] = target_data['subinfo']['fin'][IDs[:,1]]
 
-load_scaler1 = True
+
 if load_scaler1:
     scaler1 = pickle.load(open('NN1_scaler1_version8', 'rb'))
-    target_params_y = scaler1.transform(target_params_y.T)
-    target_params_y = target_params_y.T
 else:
     scaler_y = StandardScaler()
-    target_params_y = scaler_y.fit_transform(target_params_y.T)
-    target_params_y = target_params_y.T
 
 baseline = np.mean(abs(target_params_y), 0)
 mean_baseline_prop = np.mean(abs(target_params_y), 1)
 
 #%% Load NNLS data
 
-new_gen= True
-nouvel_enregist = True
-via_pickle = False
+new_gen= False
+nouvel_enregist = False
+via_pickle = True
 filename1 = 'data_TEST2/dataNW2_w_store_TEST2'
 filename2 = 'data_TEST2/dataNW2_targets_TEST2' 
 
@@ -113,13 +113,15 @@ if via_pickle:
     w_store = pickle.load(open(filename1, 'rb'))
     target_params_w = pickle.load(open(filename2, 'rb'))
 
-load_scaler2 = True
+
 if load_scaler2:
     scaler_w = pickle.load(open('NN2_scaler2_version8', 'rb'))
-    target_params_w = scaler_w.transform(target_params_w)
+    if scaled:
+        target_params_w = scaler_w.transform(target_params_w)
 else:
     scaler_w = StandardScaler()
-    target_params_w = scaler_w.fit_transform(target_params_w)
+    if scaled:
+        target_params_w = scaler_w.fit_transform(target_params_w)
 
 #%% Load models
 
@@ -174,11 +176,23 @@ if compare_NoNoise_Trees:
     
 #%% Load exhaustive search error
 
-filename0 = "error_M1_testdata_TEST2"
-error0 = pickle.load(open(filename0, 'rb'))
+if scaled:
+    filename0 = "error_M1_testdata_TEST2"
+else:
+    filename0 = 'error_M1_testdata_EstOrientations_%s' %n_test
 
-filename0_TrueOri = "error_M1_testdata_TEST2_TrueOrientations"
+error0 = pickle.load(open(filename0, 'rb'))
+print(np.mean(error0,1))
+
+scaled = False
+if scaled:
+    filename0_TrueOri = "error_M1_testdata_TEST2_TrueOrientations"
+else:
+    filename0_TrueOri = 'error_M1_testdata_TrueOrientations_%s' %n_test
+
 error0_TrueOri = pickle.load(open(filename0_TrueOri, 'rb'))
+
+print(np.mean(error0_TrueOri,1))
     
 #%% predictions
 
@@ -188,10 +202,14 @@ def compute_error_NN1(y_data):
     tic = time.time()
     output1 = net1(y_data_n)
     output1 = output1.detach().numpy()
+    
+    if scaled==False: # alors je descale
+        output1_desc = scaler1.inverse_transform(output1)
+    
     toc = time.time()
     predic_time1 = toc - tic
     
-    error1 = abs(output1 - target_params_y.T) #(15000, 6)
+    error1 = abs(output1_desc - target_params_y.T) #(15000, 6)
     sample_error1 = np.mean(error1, 0)
     error1_vec = np.mean(error1, 1)
     
@@ -199,6 +217,8 @@ def compute_error_NN1(y_data):
           "Mean error: ", np.mean(sample_error1), '\n'
           "Error prop: ", sample_error1, '\n',
           "prediction time: ", predic_time1, '\n')
+    
+    
     
     return error1, error1_vec
 
@@ -216,11 +236,16 @@ def compute_error_NN2(w_store):
     output2 = net2(w_test[:,:,0], w_test[:,:,1])
     output2 = output2.detach().numpy()
     
+    if scaled==False: # alors je descale
+        output2_desc = scaler_w.inverse_transform(output2)
+        
+    #output2_desc = output2_desc.detach().numpy()
+    
     toc = time.time()
     predic_time2 = toc - tic
     
-    #target_params_w = target_params_w.detach().numpy()
-    error2 = abs(output2 - target_params_w) #(15000, 6)
+    target_params_w2 = target_params_w.detach().numpy()
+    error2 = abs(output2_desc - target_params_w2) #(15000, 6)
     sample_error2 = np.mean(error2, 0)
     error2_vec = np.mean(error2, 1)
     
@@ -240,7 +265,10 @@ def compute_error_T(y_data, model, method=' '):
     toc = time.time()
     predic_time = toc - tic
     
-    error = abs(output - target_params_y.T) #(15000, 6)
+    if scaled==False: # alors je descale
+        output_desc = scaler1.inverse_transform(output)
+    
+    error = abs(output_desc - target_params_y.T) #(15000, 6)
     sample_error = np.mean(error, 0)
     error_vec = np.mean(error, 1)
     
@@ -359,16 +387,17 @@ plt.savefig("graphs/Comp_Nus_test%s.pdf" %n_test, dpi=150)
 fig3, ax3 = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
 fig3.suptitle('Error of each property dependent on nu for different noise levels')
 prop =['nu', 'rad', 'fin']
-colors = ['black', 'steelblue', 'goldenrod', 'indianred']
-labels = ['Exhaustive search', 'NNLS + DL', 'GBoosting', 'DL']
+colors = ['grey','black', 'steelblue', 'goldenrod', 'indianred']
+labels = ['ES*', 'ES', 'NNLS + DL', 'GBoosting', 'DL']
 for i in range(3):
     for j in range(3): #prop
         
-        ax3[j,i].plot(nu_min, (prop_error0[i,:,j]+prop_error0[i,:,j+3])/2, color= colors[0], marker='x')
-        ax3[j,i].plot(nu_min, (prop_error2[i,:,j]+prop_error2[i,:,j+3])/2, color= colors[1], marker='x')
+        ax3[j,i].plot(nu_min, (prop_error0_TrueOri[i,:,j]+prop_error0_TrueOri[i,:,j+3])/2, color= colors[0], marker='x')
+        ax3[j,i].plot(nu_min, (prop_error0[i,:,j]+prop_error0[i,:,j+3])/2, color= colors[1], marker='x')
+        ax3[j,i].plot(nu_min, (prop_error2[i,:,j]+prop_error2[i,:,j+3])/2, color= colors[2], marker='x')
         #ax3[j,i].plot(nu_min, (prop_error_rf[i,:,j]+prop_error_rf[i,:,j+3])/2, color= colors[2], marker='x')
-        ax3[j,i].plot(nu_min, (prop_error_b[i,:,j]+prop_error_b[i,:,j+3])/2, color= colors[2], marker='x')
-        ax3[j,i].plot(nu_min, (prop_error1[i,:,j]+prop_error1[i,:,j+3])/2, color= colors[3], marker='x')
+        ax3[j,i].plot(nu_min, (prop_error_b[i,:,j]+prop_error_b[i,:,j+3])/2, color= colors[3], marker='x')
+        ax3[j,i].plot(nu_min, (prop_error1[i,:,j]+prop_error1[i,:,j+3])/2, color= colors[4], marker='x')
         #ax3[j,i].plot(nu_min, (prop_b[i,:,j]+prop_b[i,:,j+3])/2, color= colors[4], marker='x')
         
         if i==0:
@@ -379,7 +408,10 @@ for i in range(3):
             ax3[j,i].set_xlabel('nu1')
             
         ax3[j,i].yaxis.grid(True)
-        ax3[j,i].set_ylim(0, 1.1)
+        if j==1:
+            ax3[j,i].set_ylim(0, 0.0000015)
+        else:    
+            ax3[j,i].set_ylim(0, 0.25)
     
 fig3.legend(labels)
 plt.savefig("graphs/Comp_MAEprop_test%s.pdf" %n_test, dpi=150) 
@@ -389,18 +421,18 @@ plt.savefig("graphs/Comp_MAEprop_test%s.pdf" %n_test, dpi=150)
 fig31, ax31 = plt.subplots(nrows=3, ncols=2, figsize=(9, 12))
 fig31.suptitle('Comparing the error of the 2 fascicles')
 prop =['nu', 'rad', 'fin']
-colors = ['black', 'steelblue', 'goldenrod', 'indianred']
-labels = ['Exhaustive search', 'NNLS + DL', 'GBoosting', 'DL']
+colors = ['grey', 'black', 'steelblue', 'goldenrod', 'indianred']
+labels = ['ES*', 'ES', 'NNLS + DL', 'GBoosting', 'DL']
 nu_min2 = [[0.5, 0.4, 0.3, 0.2, 0.1],
           [0.5, 0.6, 0.7, 0.8, 0.9]]
 for i in range(2):
     for j in range(3): #prop
-        
-        ax31[j,i].plot(nu_min2[i], np.mean(prop_error0[:,:,i*3+j],0), color= colors[0], marker='x')
-        ax31[j,i].plot(nu_min2[i], np.mean(prop_error2[:,:,i*3+j],0), color= colors[1], marker='x')
+        ax31[j,i].plot(nu_min2[i], np.mean(prop_error0_TrueOri[:,:,i*3+j],0), color= colors[0], marker='x')
+        ax31[j,i].plot(nu_min2[i], np.mean(prop_error0[:,:,i*3+j],0), color= colors[1], marker='x')
+        ax31[j,i].plot(nu_min2[i], np.mean(prop_error2[:,:,i*3+j],0), color= colors[2], marker='x')
         #ax3[j,i].plot(nu_min, (prop_error_rf[i,:,j]+prop_error_rf[i,:,j+3])/2, color= colors[2], marker='x')
-        ax31[j,i].plot(nu_min2[i], np.mean(prop_error_b[:,:,i*3+j],0), color= colors[2], marker='x')
-        ax31[j,i].plot(nu_min2[i], np.mean(prop_error1[:,:,i*3+j],0), color= colors[3], marker='x')
+        ax31[j,i].plot(nu_min2[i], np.mean(prop_error_b[:,:,i*3+j],0), color= colors[3], marker='x')
+        ax31[j,i].plot(nu_min2[i], np.mean(prop_error1[:,:,i*3+j],0), color= colors[4], marker='x')
         #ax3[j,i].plot(nu_min, (prop_b[i,:,j]+prop_b[i,:,j+3])/2, color= colors[4], marker='x')
         
         if i==0:
@@ -411,7 +443,11 @@ for i in range(2):
             ax31[j,i].set_xlabel('nu %s' % (i+1))
             
         ax31[j,i].yaxis.grid(True)
-        ax31[j,i].set_ylim(0, 1.25)
+        
+        if j==1:
+            ax31[j,i].set_ylim(0, 0.00000175)
+        else:    
+            ax31[j,i].set_ylim(0, 0.3)
 
     
 fig31.legend(labels)

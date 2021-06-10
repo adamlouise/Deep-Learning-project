@@ -44,6 +44,7 @@ import os
 import scipy.io as scio
 import sys
 import time
+import pickle
 
 from dipy.core.gradients import gradient_table
 from dipy.data import get_sphere
@@ -63,6 +64,9 @@ import mf_utils as util
 use_prerot = False  # use pre-rotated dictionaries
 sparse = True  # store data sparsely to save space
 save_res = False  # save mat file containing data
+save_DW_image = False
+save_DW_noisy = False
+
 SNR_dist = 'uniform'  # 'uniform' or 'triangular'
 num_samples = 1000
 save_dir = 'synthetic_data'  # destination folder
@@ -86,12 +90,6 @@ sch_mat_b0[ind_b0, 4:] = sch_mat[0, 4:]
 sch_mat_b0[ind_b, :] = sch_mat
 num_mris = sch_mat_b0.shape[0]
 
-#print('ind_b0', ind_b0)
-#print('ind_b', ind_b)
-#print('num_B0', num_B0)
-#print('sch_mat_b0', sch_mat_b0)
-#print('num_mris', num_mris)
-
 # %% Load single-fascicle canonical dictionary
 ld_singfasc_dic = util.loadmat('MC_dictionary_hcp.mat')
 # The single-fascicle dictionary stored in the matfile contains all the b0
@@ -112,12 +110,6 @@ WM_DIFF = ld_singfasc_dic['WM_DIFF']
 S0_fasc = ld_singfasc_dic['S0_fascicle']
 sig_csf = ld_singfasc_dic['sig_csf']  # already T2-weighted as well
 subinfo = ld_singfasc_dic['subinfo']  # just used for displaying results
-
-#print('num_atoms', num_atoms)
-#print('WM_DIFF', WM_DIFF)
-#print('S0_fasc', S0_fasc.shape)
-#print('sig_csf', sig_csf.shape)
-#print('subinfo', subinfo)
 
 S0_max = np.max(S0_fasc)
 assert num_atoms == len(subinfo['rad']), "Inconsistency dictionaries"
@@ -423,9 +415,6 @@ print('Time estimation of orientation', print(sum(time_est_o)))
 print('Time rotation of dictionary', print(sum(time_rot_hist)))
 print('Time nnls', print(sum(time_nnls_hist)))
 
-#print('DW_image_store', DW_image_store)
-
-#print('DW_noisy_store', DW_noisy_store)
 
 # %% Save results
 # plus d'actualité: Note! The DW-MRI signal is not stored! just the output of NNLS
@@ -536,17 +525,18 @@ Detect missed fascicles by orientation estimation procedure:
 
 '''
 
-#%% Enregistrer DW_image dans pickle files
+#%% Save DW_image with pickle files
 
+if save_DW_image:
+    filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_version8_24_5" %
+                              (SNR_str, num_samples))
+    with open(filename1, 'wb') as f:
+        pickle.dump(DW_image_store, f)
+        f.close()
 
-filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_version8_24_5" %
-                          (SNR_str, num_samples))
-# filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_version8" %
-#                           (SNR_str, num_samples))
-
-with open(filename1, 'wb') as f:
-    pickle.dump(DW_image_store, f)
-    f.close()
-# with open(filename2, 'wb') as f:
-#     pickle.dump(DW_noisy_store, f)
-#     f.close()
+if save_DW_noisy:       
+    filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_version8" %
+                              (SNR_str, num_samples))
+    with open(filename2, 'wb') as f:
+        pickle.dump(DW_noisy_store, f)
+        f.close()
