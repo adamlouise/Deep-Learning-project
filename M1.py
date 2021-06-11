@@ -28,15 +28,11 @@ from matplotlib.colors import LogNorm
 
 
 # ---- Set input parameters here -----
-n_test = '9_6_TEST2_descaled' # used for saving
-
-use_prerot = False  # use pre-rotated dictionaries
-sparse = True  # store data sparsely to save space
+n_test = '11_6_TEST3_descaled' # used for saving
 
 save_err = True # save error in pickle file
-SNR_dist = 'uniform'  # 'uniform' or 'triangular'
+
 num_sample = 15000
-save_dir = 'synthetic_data'  # destination folder
 M0 = 500
 num_fasc = 2
 
@@ -47,21 +43,21 @@ np.random.seed(rand_seed)
 #%% Load Dw_image data
 
 use_noise = True
-use_NoNoise = True
+use_NoNoise = False
 
 if use_noise:
-    filename = 'data_TEST2/DW_noisy_store_uniform_15000__lou_TEST2'
+    filename = 'data_TEST3_article/DW_noisy_store__fixedSNR_15000__lou_TEST3_article'
     y_data = pickle.load(open(filename, 'rb'))
     y_data = y_data/M0
     print('ok noise')
     
 if use_NoNoise:   
-    filename = 'data_TEST2/DW_image_store_uniform_15000__lou_TEST2'
+    filename = 'data_TEST3_article/DW_image_store__fixedSNR_15000__lou_TEST3_article'
     y_data2 = pickle.load(open(filename, 'rb'))    
     print('ok no noise')
     
-target_data = util.loadmat(os.path.join('data_TEST2',
-                                            "training_datauniform_15000_samples_lou_TEST2"))
+target_data = util.loadmat(os.path.join('data_TEST3_article',
+                                            "training_data_fixedSNR_15000_samples_lou_TEST3_article"))
 
 IDs = target_data['IDs'][0:num_sample, :]
 nus = target_data['nus'][0:num_sample, :]

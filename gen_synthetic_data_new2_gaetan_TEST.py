@@ -59,9 +59,9 @@ import mf_utils as util
 
 # ---- Set input parameters here -----
 use_prerot = False  # use pre-rotated dictionaries
-sparse = True  # store data sparsely to save space
+sparse = False # store data sparsely to save space
 save_res = True  # save mat file containing data
-SNR_dist = 'uniform'  # 'uniform' or 'triangular'
+SNR_dist = 'fixed'  # 'uniform' or 'triangular'
 num_samples = 15000
 save_dir = 'synthetic_data'  # destination folder
 
@@ -153,12 +153,16 @@ if sparse:
     nnz_pred = int(np.ceil(sparsity * num_atoms * num_samples * num_fasc))
     # Store row and column indices of the dense weight matrix
     w_idx = np.zeros((nnz_pred, 2), dtype=np.int64)  # 2 is 2 !
+    w_idx_0 = np.zeros((nnz_pred, 2), dtype=np.int64)  # 2 is 2 !
     # Store weights themselves
     w_data = np.zeros(nnz_pred, dtype=np.float64)
+    w_data_0 = np.zeros(nnz_pred, dtype=np.float64)
 else:
     w_store = np.zeros((num_samples, num_fasc*num_atoms), dtype=np.float)
+    w_store_0 = np.zeros((num_samples, num_fasc*num_atoms), dtype=np.float)
 
 nnz_hist = np.zeros(num_samples)  # always useful even in non sparse mode
+nnz_hist_0 = np.zeros(num_samples)  # always useful even in non sparse mode
 
 # Quantities used repeatedly for CSD peak estimation
 # use largest sphere available in Dipy
@@ -220,17 +224,22 @@ if not use_prerot:
     dictionary[:, :num_atoms] = dic_sing_fasc
 
 nnz_cnt = 0  # non-zero entries (just for sparse case)
+nnz_cnt_0 = 0
 
 plt.close('all')
 
 i = 0
 num_it = 1000
 nu_min_values = [0.5, 0.4, 0.3, 0.2, 0.1]
-SNR_min_values = [10, 30, 50]
+#SNR_min_values = [10, 30, 50]
+
+SNR_val = [25, 50, 100]
 
 for nu_min in nu_min_values:
-    for SNR_ind in range(len(SNR_min_values)):
-        SNR_min = SNR_min_values[SNR_ind]
+    for SNR_ind in range(len(SNR_val)):
+        #SNR_min = SNR_min_values[SNR_ind]
+        SNR_min = SNR_val[SNR_ind]
+        SNR_max = SNR_val[SNR_ind]
         
         for j in range(num_it):            
             nu1 = nu_min
@@ -242,6 +251,8 @@ for nu_min in nu_min_values:
                 SNR = np.random.triangular(SNR_min, SNR_min, SNR_max, 1)
             elif SNR_dist == 'uniform':
                 SNR = np.random.uniform(SNR_min, SNR_max, 1)
+            elif SNR_dist == 'fixed':
+                SNR = SNR_min
             else:
                 raise ValueError("Unknown SNR distribution %s" % SNR_dist)
         
@@ -264,16 +275,16 @@ for nu_min in nu_min_values:
                     norm2 = np.sqrt(np.sum(cyldir_2**2))
                 cyldir_2 = cyldir_2/norm2
             crossang = np.arccos(np.abs(np.dot(cyldir_1, cyldir_2))) * 180/np.pi
+            
+            dic_sing_fasc_2 = util.rotate_atom(dic_sing_fasc,
+                                           sch_mat_b0, refdir, cyldir_2,
+                                           WM_DIFF, S0_fasc)
+            dictionary[:, num_atoms:] = dic_sing_fasc_2
+
+            # Assemble synthetic DWI
+            DW_image = (nu1 * dic_sing_fasc[:, ID_1]
+                    + nu2 * dic_sing_fasc_2[:, ID_2])
         
-            # sig_fasc1 = util.rotate_atom(dic_sing_fasc[:, ID_1],
-            #                              sch_mat_b0, refdir, cyldir_1,
-            #                              WM_DIFF, S0_fasc[:, ID_1])
-            sig_fasc1 = dic_sing_fasc[:, ID_1]
-            sig_fasc2 = util.rotate_atom(dic_sing_fasc[:, ID_2],
-                                         sch_mat_b0, refdir, cyldir_2,
-                                         WM_DIFF, S0_fasc[:, ID_2])
-        
-            DW_image = nu1 * sig_fasc1 + nu2 * sig_fasc2
         
             # Simulate noise and MRI scanner scaling
             DW_image_store[:, i] = DW_image
@@ -282,7 +293,38 @@ for nu_min in nu_min_values:
             DW_image_noisy = M0 * DW_image_noisy
         
             DW_noisy_store[:, i] = DW_image_noisy
+            
+            # Estimate NNLS with true ori         
+            ############################
+            ## Solve NNLS
+            norm_DW_0 = np.max(DW_image_noisy[sch_mat_b0[:, 3] == 0])
+            (w_nnls_0,
+                 PP_0,
+                 _) = util.nnls_underdetermined(dictionary,
+                                                DW_image_noisy/norm_DW_0)
+            
+            nnz_hist_0[i] = PP_0.size
+            
+            if sparse:
+                # Check size and double it if needed
+                if nnz_cnt_0 + PP_0.size > w_data_0.shape[0]:
+                    w_idx_0 = np.concatenate((w_idx_0, np.zeros(w_idx_0.shape)), axis=0)
+                    w_data_0 = np.concatenate((w_data_0, np.zeros(w_data_0.shape)), axis=0)
+                    print("Doubled size of index and weight arrays after sample %d "
+                          "(adding %d non-zero elements to %d, exceeding arrays' "
+                          " size of %d)"
+                          % (i+1, PP_0.size, nnz_cnt_0, w_data_0.shape[0]))
+                w_data_0[nnz_cnt_0:nnz_cnt_0+PP_0.size] = w_nnls_0[PP_0]
         
+                w_idx_0[nnz_cnt_0:nnz_cnt_0+PP_0.size, 0] = i  # row indices
+                w_idx_0[nnz_cnt_0:nnz_cnt_0+PP_0.size, 1] = PP_0  # column indices
+        
+                nnz_cnt_0 += PP_0.size
+            else:
+                w_store_0[i, :] = w_nnls_0
+        
+            
+            #######################                                    
             # Estimate peak directions from noisy signal
             peaks = get_csd_peaks(DW_image_noisy, sch_mat_b0, num_fasc)
         
@@ -350,7 +392,7 @@ for nu_min in nu_min_values:
                                                          WM_DIFF, S0_fasc)
             time_rot_hist[i] = time.time() - start_rot
         
-            # Solve NNLS
+            #################@ Solve NNLS
             norm_DW = np.max(DW_image_noisy[sch_mat_b0[:, 3] == 0])
             (w_nnls,
              PP,
@@ -395,6 +437,9 @@ if sparse:
     # Discard unused memory
     w_idx = w_idx[:nnz_cnt, :]
     w_data = w_data[:nnz_cnt]
+    
+    w_idx_0 = w_idx_0[:nnz_cnt_0, :]
+    w_data_0 = w_data_0[:nnz_cnt_0]
 time_elapsed = time.time() - starttime
 print('%d samples created in %g sec.' % (num_samples, time_elapsed))
 
@@ -427,6 +472,7 @@ mdict = {'rand_seed': rand_seed,
          'nus': nus,
          'SNRs': SNRs,
          'nnz_hist': nnz_hist,
+         'nnz_hist_0': nnz_hist_0,
          'orientations': orientations,
          'est_orientations': est_orientations,  # new !
          'use_prerot': use_prerot,
@@ -439,23 +485,29 @@ if use_prerot:
 if sparse:
     mdict['w_idx'] = w_idx
     mdict['w_data'] = w_data
+    mdict['w_idx_0'] = w_idx_0
+    mdict['w_data_0'] = w_data_0
 else:
     mdict['w_store'] = w_store
+    mdict['w_store_0'] = w_store_0
 
 if save_res:
     if SNR_dist == 'uniform':
         SNR_str = 'uniform'
     elif SNR_dist == 'triangular':
         SNR_str = '_triangSNR'
+    elif SNR_dist == 'fixed':
+        SNR_str = '_fixedSNR'
     else:
         raise ValueError('Unknown SNR distribution %s' % SNR_dist)
-    fname = os.path.join(save_dir, "training_data%s_%d_samples_lou_TEST2" %
-                         (SNR_str, num_samples))
+    fname = os.path.join("data_TEST3_article/training_data_fixedSNR_%d_samples_lou_TEST3_article" %
+                         (num_samples))
     scio.savemat(fname,
                  mdict,
                  format='5',
                  long_field_names=False,
                  oned_as='column')
+    print("OK, saved")
 
 ''' Assess quality of the estimation of peak directions.
 - STRATEGY A
@@ -508,13 +560,13 @@ Detect missed fascicles by orientation estimation procedure:
 
 #%% Enregistrer DW_image dans pickle files
 
-save_pickle = False
+save_pickle = True
 
 if save_pickle:
     import pickle   
-    filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_TEST2" %
+    filename1 = os.path.join(save_dir, "DW_image_store_%s_%d__lou_TEST3_article" %
                               (SNR_str, num_samples))
-    filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_TEST2" %
+    filename2 = os.path.join(save_dir, "DW_noisy_store_%s_%d__lou_TEST3_article" %
                               (SNR_str, num_samples))
     
     with open(filename1, 'wb') as f:
