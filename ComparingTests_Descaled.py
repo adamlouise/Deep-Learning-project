@@ -18,10 +18,11 @@ import time
 from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 
-n_test = '8_6_TEST2_descaled' # date for saving
+n_test = '11_6_TEST3_descaled' # date for saving
 num_sample = 15000 # size test set
 n_sa = 1000
-SNR = [10, 30, 50]
+#SNR = [10, 30, 50]
+SNR= [25, 50, 100]
 nu_min = [0.5, 0.4, 0.3, 0.2, 0.1]
 
 num_params = 6
@@ -43,7 +44,7 @@ use_NoNoise = False
 print("Noise", use_noise)
 
 if use_noise:
-    filename = 'data_TEST2/DW_noisy_store_uniform_15000__lou_TEST2'
+    filename = 'data_TEST3_article/DW_noisy_store__fixedSNR_15000__lou_TEST3_article'
     y_data = pickle.load(open(filename, 'rb'))
     y_data = y_data/M0
     # small changes for nn
@@ -53,7 +54,7 @@ if use_noise:
     print('ok noise')
     
 if use_NoNoise:   
-    filename = 'data_TEST2/DW_image_store_uniform_15000__lou_TEST2'
+    filename = 'data_TEST3_article/DW_image_store__fixedSNR_15000__lou_TEST3_article'
     y_data2 = pickle.load(open(filename, 'rb'))    
     # small changes for nn
     y_data2 = np.transpose(y_data2)
@@ -61,8 +62,8 @@ if use_NoNoise:
     y_data2_n = y_data2_n.float()
     print('ok no noise')
     
-target_data = util.loadmat(os.path.join('data_TEST2',
-                                            "training_datauniform_15000_samples_lou_TEST2"))
+target_data = util.loadmat(os.path.join('data_TEST3_article',
+                                            "training_data_fixedSNR_15000_samples_lou_TEST3_article"))
 
 IDs = target_data['IDs'][0:num_sample, :]
 nus = target_data['nus'][0:num_sample, :]
@@ -87,16 +88,17 @@ mean_baseline_prop = np.mean(abs(target_params_y), 1)
 
 #%% Load NNLS data
 
-new_gen= False
-nouvel_enregist = False
-via_pickle = True
-filename1 = 'data_TEST2/dataNW2_w_store_TEST2'
-filename2 = 'data_TEST2/dataNW2_targets_TEST2' 
+new_gen= True
+nouvel_enregist = True
+via_pickle = False
+#filename1 = 'data_TEST3_article/dataNW2_w_store_EstOri_TEST3_article'
+filename1 = 'data_TEST3_article/dataNW2_w_store_TrueOri_TEST3_article'
+filename2 = 'data_TEST3_article/dataNW2_targets_TEST3_article' 
 
 if new_gen:   
     print("on load avec gen_batch_data")    
     from getDataW import gen_batch_data
-    w_store, target_params_w = gen_batch_data(0, num_sample, 'train')
+    w_store, target_params_w = gen_batch_data(0, num_sample, 'TrueOri')
     print(w_store.shape, target_params_w.shape)
     
     if nouvel_enregist:
@@ -111,6 +113,7 @@ if new_gen:
 if via_pickle:   
     print("on load via les fichiers pickle :-) ")     
     w_store = pickle.load(open(filename1, 'rb'))
+    w_store_0 = pickle.load(open(filename1_0, 'rb'))
     target_params_w = pickle.load(open(filename2, 'rb'))
 
 
@@ -164,7 +167,7 @@ filename_b = "models_statedic/M3_GradientBoosting_version8_1"
 #filename_b = "models_statedic/M3_GradientBoosting_version8_200000tsamples"
 model_b = pickle.load(open(filename_b, 'rb'))
 
-compare_NoNoise_Trees = True
+compare_NoNoise_Trees = False
 
 if compare_NoNoise_Trees:
     filename_rf_NoNoise = "models_statedic/M3_RandomForest_version8_1NoNoise"
@@ -177,22 +180,22 @@ if compare_NoNoise_Trees:
 #%% Load exhaustive search error
 
 if scaled:
-    filename0 = "error_M1_testdata_TEST2"
+    filename0 = "data_TEST3_article/error_M1_testdata_TEST3"
 else:
-    filename0 = 'error_M1_testdata_EstOrientations_%s' %n_test
+    filename0 = 'data_TEST3_article/error_M1_testdata_EstOrientations_%s' %n_test
 
 error0 = pickle.load(open(filename0, 'rb'))
 print(np.mean(error0,1))
 
-scaled = False
-if scaled:
-    filename0_TrueOri = "error_M1_testdata_TEST2_TrueOrientations"
-else:
-    filename0_TrueOri = 'error_M1_testdata_TrueOrientations_%s' %n_test
 
-error0_TrueOri = pickle.load(open(filename0_TrueOri, 'rb'))
+# if scaled:
+#     filename0_TrueOri = "error_M1_testdata_TEST2_TrueOrientations"
+# else:
+#     filename0_TrueOri = 'error_M1_testdata_TrueOrientations_%s' %n_test
 
-print(np.mean(error0_TrueOri,1))
+# error0_TrueOri = pickle.load(open(filename0_TrueOri, 'rb'))
+
+# print(np.mean(error0_TrueOri,1))
     
 #%% predictions
 
@@ -297,21 +300,23 @@ def reshape(error, error_vec):
 
 error1, error1_vec = compute_error_NN1(y_data)
 error2, error2_vec = compute_error_NN2(w_store)
-error_rf, error_rf_vec = compute_error_T(y_data, model_rf, 'RF')    
-error_b, error_b_vec = compute_error_T(y_data, model_b, 'Boosting')  
+error2_0, error2_0_vec = compute_error_NN2(w_store_0)
+#error_rf, error_rf_vec = compute_error_T(y_data, model_rf, 'RF')    
+#error_b, error_b_vec = compute_error_T(y_data, model_b, 'Boosting')  
 
 #baseline
 #tab_b, prop_b, prop_tot_b = reshape(abs(target_params_y.T), np.mean(abs(target_params_y), 0))
 
 #exhaustive search
 tab_error0, prop_error0, prop_tot_error0 = reshape(error0.T, np.mean(error0, 0))
-tab_error0_TrueOri, prop_error0_TrueOri, prop_tot_error0_TrueOri = reshape(error0_TrueOri.T, np.mean(error0_TrueOri, 0))
+#tab_error0_TrueOri, prop_error0_TrueOri, prop_tot_error0_TrueOri = reshape(error0_TrueOri.T, np.mean(error0_TrueOri, 0))
 
 #methods
 tab_error1, prop_error1, prop_tot_error1 = reshape(error1, error1_vec)
 tab_error2, prop_error2, prop_tot_error2 = reshape(error2, error2_vec)
-tab_error_rf, prop_error_rf, prop_tot_error_rf = reshape(error_rf, error_rf_vec)
-tab_error_b, prop_error_b, prop_tot_error_b = reshape(error_b, error_b_vec)
+tab_error2_0, prop_error2_0, prop_tot_error2_0 = reshape(error2_0, error2_0_vec)
+#tab_error_rf, prop_error_rf, prop_tot_error_rf = reshape(error_rf, error_rf_vec)
+#tab_error_b, prop_error_b, prop_tot_error_b = reshape(error_b, error_b_vec)
 
 if compare_NoNoise_Trees:
     error_rf_NoNoise, error_rf_vec_NoNoise = compute_error_T(y_data, model_rf_NoNoise, 'RF, _NoNoise')    
@@ -384,26 +389,30 @@ plt.savefig("graphs/Comp_Nus_test%s.pdf" %n_test, dpi=150)
 
 #%% prop vs snr
 
+nu_min = [0.5, 0.4, 0.3, 0.2, 0.1]
+SNR= [25, 50, 100]
 fig3, ax3 = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
 fig3.suptitle('Error of each property dependent on nu for different noise levels')
 prop =['nu', 'rad', 'fin']
-colors = ['grey','black', 'steelblue', 'goldenrod', 'indianred']
-labels = ['ES*', 'ES', 'NNLS + DL', 'GBoosting', 'DL']
+colors = ['grey','black', 'steelblue', 'seagreen', 'indianred']
+labels = ['ES', 'NNLS + DL', 'NNLS + DL *', 'DL']
 for i in range(3):
     for j in range(3): #prop
         
-        ax3[j,i].plot(nu_min, (prop_error0_TrueOri[i,:,j]+prop_error0_TrueOri[i,:,j+3])/2, color= colors[0], marker='x')
+        #ax3[j,i].plot(nu_min, (prop_error0_TrueOri[i,:,j]+prop_error0_TrueOri[i,:,j+3])/2, color= colors[0], marker='x')
         ax3[j,i].plot(nu_min, (prop_error0[i,:,j]+prop_error0[i,:,j+3])/2, color= colors[1], marker='x')
+        
         ax3[j,i].plot(nu_min, (prop_error2[i,:,j]+prop_error2[i,:,j+3])/2, color= colors[2], marker='x')
+        ax3[j,i].plot(nu_min, (prop_error2_0[i,:,j]+prop_error2_0[i,:,j+3])/2, color= colors[3], marker='x')
         #ax3[j,i].plot(nu_min, (prop_error_rf[i,:,j]+prop_error_rf[i,:,j+3])/2, color= colors[2], marker='x')
-        ax3[j,i].plot(nu_min, (prop_error_b[i,:,j]+prop_error_b[i,:,j+3])/2, color= colors[3], marker='x')
+        #ax3[j,i].plot(nu_min, (prop_error_b[i,:,j]+prop_error_b[i,:,j+3])/2, color= colors[3], marker='x')
         ax3[j,i].plot(nu_min, (prop_error1[i,:,j]+prop_error1[i,:,j+3])/2, color= colors[4], marker='x')
         #ax3[j,i].plot(nu_min, (prop_b[i,:,j]+prop_b[i,:,j+3])/2, color= colors[4], marker='x')
         
         if i==0:
             ax3[j,i].set_ylabel('Mean absolute error \n \n %s' % (prop[j]))
         if j==0:
-            ax3[j,i].set_title('SNR %s - 100' % (SNR[i]))
+            ax3[j,i].set_title('SNR %s' % (SNR[i]))
         if j==2:
             ax3[j,i].set_xlabel('nu1')
             

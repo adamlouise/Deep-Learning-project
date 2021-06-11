@@ -32,9 +32,9 @@ assert unit_variance != sum_to_one, ("Choose one of two normalization "
 
 #Test    
 if SNR_dist == 'uniform':
-    nnls_output = util.loadmat(os.path.join('data_TEST2',
-                                            "training_datauniform_15000_samples_lou_TEST2"))
+    nnls_output = util.loadmat('data_TEST3_article/training_data_fixedSNR_15000_samples_lou_TEST3_article')
     validation_data = nnls_output
+    print(nnls_output['nnz_hist_0'])
 
 # Substrate (=fingerprint) properties
 sub_rads = nnls_output['subinfo']['rad']  # Python list
@@ -75,12 +75,14 @@ if normalisation:
 #%% Function
 
 def gen_batch_data(start, end, mode):
+    print(mode)
     if end > tot_samples:
         raise ValueError("Only %d data samples available. Asked for samples "
                          "up to %d." % (tot_samples, end))
     batch_size = end-start
 
     if mode == 'train':
+        print('avec est ori')
         if nnls_output['sparse']:
             w_store = np.zeros((batch_size,
                                 nnls_output['num_fasc'] *
@@ -96,24 +98,29 @@ def gen_batch_data(start, end, mode):
                     w_idx[:, 1]] = nnls_output['w_data'][isbatch]
         else:
             w_store = nnls_output['w_store'][start:end, :]
-    elif mode == 'validation':
-        if validation_data['sparse']:
+    
+    elif mode == 'TrueOri':
+        print('avec true ori')
+        if nnls_output['sparse']:
+            print('sparse')
             w_store = np.zeros((batch_size,
-                                validation_data['num_fasc'] *
-                                validation_data['num_atoms']))
-            isbatch = ((validation_data['w_idx'][:, 0] >= start) &
-                       (validation_data['w_idx'][:, 0] < end))
+                                nnls_output['num_fasc'] *
+                                nnls_output['num_atoms']))
+            isbatch = ((nnls_output['w_idx_0'][:, 0] >= start) &
+                       (nnls_output['w_idx_0'][:, 0] < end))
             chk = (np.sum(isbatch) ==
-                   np.sum(validation_data['nnz_hist'][start:end]))
+                   np.sum(nnls_output['nnz_hist_0'][start:end]))
             assert chk, ("Mismatch non-zero elements in samples "
                          "%d (incl.) to %d (excl.)" % (start, end))
-            w_idx = validation_data['w_idx'][isbatch, :]
+            w_idx = nnls_output['w_idx_0'][isbatch, :]
             w_store[w_idx[:, 0] - start,
-                    w_idx[:, 1]] = validation_data['w_data'][isbatch]
+                    w_idx[:, 1]] = nnls_output['w_data_0'][isbatch]
         else:
-            w_store = validation_data['w_store'][start:end, :]
-    else:
-        raise ValueError('Unknown mode %s' % mode)
+            w_store = nnls_output['w_store_0'][start:end, :]
+
+    #else:
+        #raise ValueError('Unknown mode %s' % mode
+        
     # NNLS weights no more normalized to sum to 1 after April 26, 2019.
     if sum_to_one:
         # Must be done before mean is removed!
@@ -142,12 +149,9 @@ def gen_batch_data(start, end, mode):
     data = torch.from_numpy(w_store).float()
 
     # Target contains nu1, r1, f1, nu2, r2, f2
-    if mode == 'train':
-        batch_IDs = nnls_output['IDs'][start:end, :]
-        batch_nus = nnls_output['nus'][start:end, :]
-    elif mode == 'validation':
-        batch_IDs = validation_data['IDs'][start:end, :]
-        batch_nus = validation_data['nus'][start:end, :]
+    batch_IDs = nnls_output['IDs'][start:end, :]
+    batch_nus = nnls_output['nus'][start:end, :]
+
     
     #Normalisation ou pas
     target = torch.FloatTensor(batch_size, num_fasc * (1 + 2)).zero_()
